@@ -70,8 +70,5 @@ htmlcov/
 ~$*
 *.docx
 
-# Database (较大，clone 后可自行生成)
-risk.db
-
 # Run results (大量 JSONL 文件，较大)
 runs/

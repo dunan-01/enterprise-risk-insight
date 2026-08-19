@@ -256,8 +256,12 @@ export default function AnalysisTab({
           {/* AI 风险摘要 */}
           <div className="result-cell" style={{ marginTop: 14, background: '#f3f7ff', borderColor: '#c9d9f5' }}>
             <div className="k">AI 风险摘要（summary）</div>
-            <div className="v" style={{ lineHeight: 1.8 }}>
-              {result.summary || '后端未返回摘要文本。'}
+            <div className="v">
+              {result.summary ? (
+                <MarkdownReport content={result.summary} />
+              ) : (
+                <span style={{ color: 'var(--text-3)' }}>后端未返回摘要文本。</span>
+              )}
             </div>
           </div>
 

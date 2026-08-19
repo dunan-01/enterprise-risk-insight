@@ -130,4 +130,21 @@ export const api = {
       ANALYSIS_TIMEOUT_MS,
     )
   },
+
+  /**
+   * 读取已有分析结果（不触发 Harness，仅读取 runs/web/<id>/analysis_result.json）。
+   * 404 时返回 null（表示该企业尚未分析）。
+   */
+  async latestAnalysis(companyId: string): Promise<AnalysisResponse | null> {
+    try {
+      return await request<AnalysisResponse>(
+        `/api/companies/${encodeURIComponent(companyId)}/analysis/latest`,
+      )
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404 && e.code === 'ANALYSIS_NOT_FOUND') {
+        return null
+      }
+      throw e
+    }
+  },
 }

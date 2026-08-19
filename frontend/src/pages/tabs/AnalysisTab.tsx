@@ -8,9 +8,12 @@ import { fmtDuration, fmtElapsed } from '../../lib/format'
 /**
  * AI 风险洞察 Tab。
  *
- * 交互状态机：idle → loading → (done | error)，状态由 CompanyPage 持有，
- * 分析期间切换 Tab 不会中断请求。
+ * 交互状态机：
+ *   loading-history → (done | not-analyzed) → loading → (done | error)
+ * 状态由 CompanyPage 持有，分析期间切换 Tab 不会中断请求。
  *
+ * - loading-history 期间展示「正在检查已有分析结果…」
+ * - not-analyzed 展示启动引导
  * - loading 期间展示「静态流程示意 + 真实等待计时」，不伪造实时进度百分比
  * - 结果全部如实展示后端返回字段（risk_level / verification_status / evidence_ids …）
  */
@@ -62,8 +65,20 @@ export default function AnalysisTab({
         <span className="hint">Risk Harness 真实分析（risk-orchestrator → coverage-auditor → risk-verifier）</span>
       </div>
 
-      {/* ============ idle：启动引导 ============ */}
-      {state.status === 'idle' && (
+      {/* ============ loading-history：检查已有分析结果 ============ */}
+      {state.status === 'loading-history' && (
+        <div className="card-body">
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+              <span className="spinner" />
+              <span style={{ fontSize: 14, color: 'var(--text-3)' }}>正在检查已有分析结果…</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ not-analyzed：启动引导 ============ */}
+      {state.status === 'not-analyzed' && (
         <div className="card-body">
           <div className="note" style={{ marginBottom: 16 }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="note-icon">

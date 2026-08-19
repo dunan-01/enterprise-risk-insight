@@ -11,9 +11,10 @@ import JudicialEventsTab from './tabs/JudicialEventsTab'
 import OverviewTab from './tabs/OverviewTab'
 import RelationsTab from './tabs/RelationsTab'
 
-/** AI 分析状态机：idle → loading → (done | error)，loading 期间可任意切换 Tab */
+/** AI 分析状态机：loading-history → (done | not-analyzed) → loading → (done | error) */
 export type AnalysisState =
-  | { status: 'idle' }
+  | { status: 'loading-history' }
+  | { status: 'not-analyzed' }
   | { status: 'loading'; startedAt: number }
   | { status: 'done'; startedAt: number; result: AnalysisResponse }
   | { status: 'error'; startedAt: number; error: ApiError }
@@ -38,7 +39,7 @@ export default function CompanyPage() {
   const [profileError, setProfileError] = useState<ApiError | null>(null)
 
   // AI 分析状态提升到页面级：切换 Tab 不中断分析请求
-  const [analysis, setAnalysis] = useState<AnalysisState>({ status: 'idle' })
+  const [analysis, setAnalysis] = useState<AnalysisState>({ status: 'loading-history' })
   const analysisRunningRef = useRef(false)
 
   const loadProfile = useCallback(async () => {
@@ -54,12 +55,28 @@ export default function CompanyPage() {
     }
   }, [companyId])
 
+  /** 加载已有分析结果（不触发 Harness） */
+  const loadHistory = useCallback(async () => {
+    setAnalysis({ status: 'loading-history' })
+    try {
+      const result = await api.latestAnalysis(companyId)
+      if (result) {
+        setAnalysis({ status: 'done', startedAt: Date.now(), result })
+      } else {
+        setAnalysis({ status: 'not-analyzed' })
+      }
+    } catch {
+      // 网络错误等不影响页面，当作未分析
+      setAnalysis({ status: 'not-analyzed' })
+    }
+  }, [companyId])
+
   useEffect(() => {
     // 切换企业时重置分析状态与页面
-    setAnalysis({ status: 'idle' })
     analysisRunningRef.current = false
     void loadProfile()
-  }, [companyId, loadProfile])
+    void loadHistory()
+  }, [companyId, loadProfile, loadHistory])
 
   const startAnalysis = useCallback(() => {
     if (analysisRunningRef.current) return
@@ -164,7 +181,7 @@ export default function CompanyPage() {
                 className={`tab ${activeTab === t.key ? 'active' : ''}`}
                 onClick={() => switchTab(t.key)}
               >
-                {t.key === 'analysis' && analysis.status === 'loading' && (
+                {t.key === 'analysis' && (analysis.status === 'loading' || analysis.status === 'loading-history') && (
                   <span className="spin-dot" title="AI 分析进行中" />
                 )}
                 {t.label}

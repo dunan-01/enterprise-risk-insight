@@ -8,12 +8,15 @@
 真实调用 OpenCode Headless（risk-orchestrator + coverage-auditor + risk-verifier）
 完成风险分析，本层不复制 Harness 逻辑、不硬编码风险判断。
 
+第三阶段：GET /api/companies/{company_id}/analysis/latest 读取已有分析结果。
+
 接口清单：
 - GET  /api/companies/search?keyword=xxx
 - GET  /api/companies/{company_id}
 - GET  /api/companies/{company_id}/business-events
 - GET  /api/companies/{company_id}/judicial-events
 - GET  /api/companies/{company_id}/relations
+- GET  /api/companies/{company_id}/analysis/latest
 - POST /api/analysis
 （/health 在 main.py 中定义）
 """
@@ -26,9 +29,10 @@ from typing import Any, Callable, Dict, List
 from fastapi import APIRouter, HTTPException, Query, status
 
 from . import deps
-from .analysis_service import analyze_company
+from .analysis_service import AnalysisNotFoundError, analyze_company, load_latest_analysis
 from .deps import (
     ERROR_ANALYSIS_FAILED,
+    ERROR_ANALYSIS_NOT_FOUND,
     ERROR_COMPANY_NOT_FOUND,
     ERROR_INTERNAL,
     ERROR_INVALID_KEYWORD,
@@ -208,7 +212,51 @@ def get_company_relations(company_id: str) -> RelationsResponse:
 
 
 # ------------------------------------------------------------
-# 接口 6：AI 风险分析（第二阶段）
+# 接口 6：读取已有分析结果（第三阶段）
+#
+# 从 runs/web/<company_id>/analysis_result.json 读取，
+# 不触发 Harness、不修改任何数据。
+#
+# 错误码约定：
+# - 企业不存在        → 404 COMPANY_NOT_FOUND
+# - 无历史分析结果    → 404 ANALYSIS_NOT_FOUND
+# - 文件读取失败      → 500 INTERNAL_ERROR
+# ------------------------------------------------------------
+
+
+@router.get(
+    "/companies/{company_id}/analysis/latest",
+    response_model=AnalysisResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="读取已有分析结果",
+    description="读取指定企业最近一次 Web 分析结果（runs/web/<id>/analysis_result.json）。不触发 Harness。",
+    tags=["analysis"],
+)
+def get_latest_analysis(company_id: str) -> AnalysisResponse:
+    """读取指定企业最近一次 Web 分析结果。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    try:
+        result = load_latest_analysis(cid)
+    except AnalysisNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_ANALYSIS_NOT_FOUND,
+                f"未找到企业 {cid} 的历史分析结果，请先执行 AI 风险分析",
+            ),
+        ) from exc
+
+    return AnalysisResponse(**result)
+
+
+# ------------------------------------------------------------
+# 接口 7：AI 风险分析（第二阶段）
 #
 # 错误码约定（见代码注释）：
 # - 企业不存在        → 404 COMPANY_NOT_FOUND（与服务层 CompanyNotFoundError 对齐）

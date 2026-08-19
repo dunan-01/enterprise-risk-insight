@@ -231,6 +231,70 @@ def _save_run_records(
 
 
 # ------------------------------------------------------------
+# 读取已有分析结果
+# ------------------------------------------------------------
+
+
+class AnalysisNotFoundError(Exception):
+    """指定企业的历史分析结果不存在。"""
+
+    def __init__(self, company_id: str) -> None:
+        super().__init__(f"未找到企业 {company_id} 的历史分析结果")
+        self.company_id = company_id
+
+
+def load_latest_analysis(company_id: str) -> Dict[str, Any]:
+    """
+    读取指定企业最近一次 Web 分析结果。
+
+    从 runs/web/<company_id>/analysis_result.json 加载，
+    如果 report_final.md 存在且 analysis_result.json 中 report 为空，
+    则从 report_final.md 补充加载报告正文。
+
+    返回响应 dict（与 POST /api/analysis 响应结构一致）。
+
+    异常：
+        AnalysisNotFoundError —— 历史分析结果不存在
+    """
+    cid = company_id.strip().upper()
+
+    result_path = RUNS_WEB_ROOT / cid / "analysis_result.json"
+    if not result_path.exists():
+        raise AnalysisNotFoundError(cid)
+
+    try:
+        raw = result_path.read_text(encoding="utf-8")
+        result = json.loads(raw)
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("读取 analysis_result.json 失败: %s", exc)
+        raise AnalysisNotFoundError(cid) from exc
+
+    # 如果 report 为空但 report_final.md 存在，从文件补充
+    report = result.get("report") or ""
+    if not report.strip():
+        report_path = RUNS_WEB_ROOT / cid / "report_final.md"
+        if report_path.exists():
+            try:
+                report = report_path.read_text(encoding="utf-8")
+                result["report"] = report
+            except OSError:
+                logger.warning("读取 report_final.md 失败: %s", cid)
+
+    # 如果 report 仍然为空，视为异常
+    if not report.strip():
+        logger.warning("企业 %s 的分析结果中 report 为空", cid)
+        raise AnalysisNotFoundError(cid)
+
+    logger.info(
+        "加载已有分析结果: %s risk=%s status=%s",
+        cid,
+        result.get("risk_level"),
+        result.get("verification_status"),
+    )
+    return result
+
+
+# ------------------------------------------------------------
 # 服务入口
 # ------------------------------------------------------------
 

@@ -65,3 +65,6 @@ htmlcov/
 *.temp
 *.bak
 *.orig
+
+# Office temporary files
+~$*

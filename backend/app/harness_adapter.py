@@ -190,23 +190,28 @@ def _extract_texts(events: List[Dict[str, Any]]) -> List[str]:
 
 def _split_report(full_text: str) -> Tuple[str, str]:
     """
-    按最后一个 VERIFICATION_STATUS 行切分：
+    按 VERIFICATION_STATUS 行切分：
 
     返回 (final_report, process_text)：
     - final_report：该行之后的部分（去掉分隔符，即最终报告全文）
     - process_text：该行之前的部分（即分析过程文本）
 
     未匹配到状态行时返回 ("", full_text)。
+
+    注意：报告正文末尾可能重复出现 VERIFICATION_STATUS（如 "**审核状态：** VERIFICATION_STATUS: PASS"），
+    应取第一个匹配作为切分点，因为真正的状态行总是在报告开头。
     """
     matches = list(VERIFICATION_STATUS_PATTERN.finditer(full_text))
     if not matches:
         return "", full_text
 
-    last = matches[-1]
-    report = full_text[last.end():]
+    # 取第一个匹配（真正的状态行总是在报告开头）
+    # 报告正文末尾的 VERIFICATION_STATUS 是内容引用，不应作为切分点
+    first = matches[0]
+    report = full_text[first.end():]
     # 去掉状态行与报告之间可能出现的分隔符（如 "---"、空行）
     report = re.sub(r"^\s*(?:-{3,}\s*)+", "", report).strip()
-    process_text = full_text[: last.start()].strip()
+    process_text = full_text[: first.start()].strip()
     return report, process_text
 
 
@@ -333,7 +338,8 @@ def run_harness_analysis(
             full_text = "\n\n".join(_extract_texts(raw_events))
             report, process_text = _split_report(full_text)
             matches = list(VERIFICATION_STATUS_PATTERN.finditer(full_text))
-            verification_status = matches[-1].group(1) if matches else None
+            # 取第一个匹配（真正的状态行总是在报告开头）
+            verification_status = matches[0].group(1) if matches else None
 
             if verification_status is not None:
                 break

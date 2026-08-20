@@ -10,6 +10,10 @@
 
 第三阶段：GET /api/companies/{company_id}/analysis/latest 读取已有分析结果。
 
+第四阶段（V1.1）：
+- GET /api/companies/{company_id}/relation-network 企业完整关联关系网络（BFS 遍历）
+- GET /api/analysis/{company_id}/latest/pdf AI 风险报告 PDF 导出
+
 接口清单：
 - GET  /api/companies/search?keyword=xxx
 - GET  /api/companies/{company_id}
@@ -18,6 +22,8 @@
 - GET  /api/companies/{company_id}/relations
 - GET  /api/companies/{company_id}/analysis/latest
 - POST /api/analysis
+- GET  /api/companies/{company_id}/relation-network
+- GET  /api/analysis/{company_id}/latest/pdf
 （/health 在 main.py 中定义）
 """
 
@@ -30,6 +36,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from . import deps
 from .analysis_service import AnalysisNotFoundError, analyze_company, load_latest_analysis
+from .relation_network_service import build_relation_network
+from .pdf_service import generate_report_pdf
 from .deps import (
     ERROR_ANALYSIS_FAILED,
     ERROR_ANALYSIS_NOT_FOUND,
@@ -46,6 +54,7 @@ from .models import (
     JudicialEventsResponse,
     ProfileResponse,
     RelationsResponse,
+    RelationNetworkResponse,
     SearchResponse,
 )
 
@@ -304,3 +313,99 @@ def create_analysis(payload: AnalysisRequest) -> AnalysisResponse:
         ) from exc
 
     return AnalysisResponse(**result)
+
+
+# ============================================================
+# 接口 8：企业关联关系网络（V1.1 新增）
+# ============================================================
+
+
+@router.get(
+    "/companies/{company_id}/relation-network",
+    response_model=RelationNetworkResponse,
+    responses={404: {"model": ErrorDetail}, 500: {"model": ErrorDetail}},
+    summary="查询企业完整关联关系网络",
+    description="从目标企业开始，BFS 遍历所有关联企业，返回完整关系网络。",
+)
+def get_relation_network(company_id: str) -> RelationNetworkResponse:
+    """查询指定企业的完整关联关系网络。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    try:
+        result = build_relation_network(cid)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(ERROR_COMPANY_NOT_FOUND, str(exc)),
+        ) from exc
+    except Exception as exc:
+        logger.exception("关系网络构建失败: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=deps.error_detail(ERROR_INTERNAL, f"关系网络构建失败：{exc}"),
+        ) from exc
+
+    return RelationNetworkResponse(**result)
+
+
+# ============================================================
+# 接口 9：AI 风险报告 PDF 导出（V1.1 新增）
+# ============================================================
+
+from fastapi.responses import FileResponse
+
+RUNS_WEB_ROOT = deps.PROJECT_ROOT / "runs" / "web"
+
+
+@router.get(
+    "/analysis/{company_id}/latest/pdf",
+    response_class=FileResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="导出 AI 风险报告 PDF",
+    description="读取已有分析结果并生成 PDF 下载。不触发 Harness。",
+    tags=["analysis"],
+)
+def export_analysis_pdf(company_id: str) -> FileResponse:
+    """导出指定企业最近一次 AI 风险分析报告的 PDF。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    # 检查是否有分析结果
+    result_path = RUNS_WEB_ROOT / cid / "analysis_result.json"
+    if not result_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_ANALYSIS_NOT_FOUND,
+                f"未找到企业 {cid} 的历史分析结果，请先执行 AI 风险分析",
+            ),
+        )
+
+    # 生成 PDF
+    pdf_path = generate_report_pdf(cid)
+    if pdf_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=deps.error_detail(
+                ERROR_INTERNAL,
+                f"企业 {cid} 的 PDF 报告生成失败",
+            ),
+        )
+
+    # 获取企业名称用于文件名
+    profile = deps.get_company_profile(cid)
+    company_name = profile.get("company_name", cid) if profile else cid
+
+    # 返回文件下载
+    filename = f"{cid}_{company_name}_企业风险调查报告.pdf"
+    return FileResponse(
+        path=str(pdf_path),
+        filename=filename,
+        media_type="application/pdf",
+    )

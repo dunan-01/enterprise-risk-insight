@@ -180,6 +180,42 @@ class HealthResponse(BaseModel):
 
 
 # ============================================================
+# 关系网络模型（V1.1 新增）
+# ============================================================
+
+
+class NetworkNode(BaseModel):
+    """关系网络节点。"""
+
+    company_id: str = Field(..., description="企业唯一ID")
+    company_name: str = Field(..., description="企业名称")
+    industry: Optional[str] = Field(None, description="所属行业")
+    business_status: Optional[str] = Field(None, description="经营状态")
+    depth: int = Field(..., description="距离目标企业的深度（0=目标企业自身）")
+
+
+class NetworkEdge(BaseModel):
+    """关系网络边。"""
+
+    relation_id: str = Field(..., description="关系唯一ID")
+    source: str = Field(..., description="关系主体企业ID")
+    target: str = Field(..., description="关系客体企业ID")
+    relation_type: str = Field(..., description="关系类型")
+    equity_ratio: Optional[float] = Field(None, description="股权比例（0-1 小数）")
+    amount: Optional[float] = Field(None, description="涉及金额（元）")
+    status: Optional[str] = Field(None, description="关系状态")
+
+
+class RelationNetworkResponse(BaseModel):
+    """企业关联关系网络响应。"""
+
+    root_company_id: str = Field(..., description="目标企业ID")
+    nodes: List[NetworkNode] = Field(..., description="网络节点列表")
+    edges: List[NetworkEdge] = Field(..., description="网络边列表")
+    truncated: bool = Field(..., description="是否因达到最大节点数而截断")
+
+
+# ============================================================
 # 风险分析接口模型（第二阶段）
 # ============================================================
 

@@ -9,6 +9,10 @@
 - 支持两种启动方式（默认端口 8000，可用环境变量 PORT 覆盖）：
     1. cd backend && .venv/bin/python -m app.main
     2. cd backend && .venv/bin/uvicorn app.main:app --port 8000
+
+V1.1 新增功能：
+- 企业关联关系网络图 API（BFS 遍历）
+- AI 风险报告 PDF 导出
 """
 
 from __future__ import annotations
@@ -38,8 +42,9 @@ app = FastAPI(
         "第一阶段：只读查询接口，封装 src/risk_tools.py 查询函数。"
         "第二阶段：POST /api/analysis 风险分析接口，真实调用 Risk Harness"
         "（opencode headless）完成企业风险调查。"
+        "第四阶段（V1.1）：企业关联关系网络图 API、AI 风险报告 PDF 导出。"
     ),
-    version="0.2.0",
+    version="1.1.0",
 )
 
 # CORS：允许所有来源，为后续前端联调准备

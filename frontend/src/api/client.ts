@@ -12,6 +12,7 @@ import type {
   BusinessEventsResponse,
   JudicialEventsResponse,
   ProfileResponse,
+  RelationNetworkResponse,
   RelationsResponse,
   SearchResponse,
 } from './types'
@@ -116,6 +117,13 @@ export const api = {
     return request<RelationsResponse>(`/api/companies/${encodeURIComponent(companyId)}/relations`)
   },
 
+  /** V1.1: 企业完整关联关系网络（多跳 BFS） */
+  relationNetwork(companyId: string): Promise<RelationNetworkResponse> {
+    return request<RelationNetworkResponse>(
+      `/api/companies/${encodeURIComponent(companyId)}/relation-network`,
+    )
+  },
+
   /**
    * AI 风险分析（同步阻塞 3-20 分钟，真实调用 Risk Harness）。
    * 超时 30 分钟，期间不卡死页面（fetch 为异步，不阻塞主线程）。
@@ -145,6 +153,64 @@ export const api = {
         return null
       }
       throw e
+    }
+  },
+
+  /** V1.1: 导出 AI 风险报告 PDF */
+  async exportPdf(companyId: string): Promise<void> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS)
+
+    try {
+      const res = await fetch(
+        `/api/analysis/${encodeURIComponent(companyId)}/latest/pdf`,
+        {
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/pdf',
+          },
+        },
+      )
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        let data: unknown = null
+        try {
+          data = text ? JSON.parse(text) : null
+        } catch {
+          data = null
+        }
+
+        const body = data as ApiErrorBody | null
+        const detail = body?.detail
+        if (detail && typeof detail.code === 'string') {
+          throw new ApiError('HTTP', detail.message, res.status, detail.code)
+        }
+        throw new ApiError('HTTP', `请求失败（HTTP ${res.status}）`, res.status, 'HTTP_ERROR')
+      }
+
+      // 获取文件名
+      const disposition = res.headers.get('Content-Disposition')
+      let filename = 'report.pdf'
+      if (disposition) {
+        const match = disposition.match(/filename\*?=(?:UTF-8''|"?)([^";]+)/)
+        if (match) {
+          filename = decodeURIComponent(match[1])
+        }
+      }
+
+      // 下载文件
+      const blob = await res.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } finally {
+      clearTimeout(timer)
     }
   },
 }

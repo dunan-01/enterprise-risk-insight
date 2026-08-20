@@ -154,3 +154,32 @@ export interface AnalysisResponse {
   report_path: string | null
   duration_seconds: number
 }
+
+// ============================================================
+// V1.1 新增：企业关联关系网络
+// ============================================================
+
+export interface NetworkNode {
+  company_id: string
+  company_name: string
+  industry: string | null
+  business_status: string | null
+  depth: number
+}
+
+export interface NetworkEdge {
+  relation_id: string
+  source: string
+  target: string
+  relation_type: string
+  equity_ratio: number | null
+  amount: number | null
+  status: string | null
+}
+
+export interface RelationNetworkResponse {
+  root_company_id: string
+  nodes: NetworkNode[]
+  edges: NetworkEdge[]
+  truncated: boolean
+}

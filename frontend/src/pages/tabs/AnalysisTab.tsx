@@ -4,6 +4,7 @@ import { EvidenceTag, RiskLevelBadge, VerificationBadge } from '../../components
 import MarkdownReport from '../../components/MarkdownReport'
 import { ErrorBlock } from '../../components/States'
 import { fmtDuration, fmtElapsed } from '../../lib/format'
+import { api } from '../../api/client'
 
 /**
  * AI 风险洞察 Tab。
@@ -54,6 +55,22 @@ export default function AnalysisTab({
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [state.status])
+
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+
+  const handleExportPdf = async () => {
+    setPdfLoading(true)
+    setPdfError(null)
+    try {
+      await api.exportPdf(companyId)
+    } catch (e) {
+      const err = e as { message?: string }
+      setPdfError(err.message ?? 'PDF 导出失败')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
 
   const result = state.status === 'done' ? state.result : null
   const error = state.status === 'error' ? state.error : null
@@ -312,11 +329,27 @@ export default function AnalysisTab({
               <span className="hint" style={{ margin: 0 }}>
                 报告由 Risk Harness（risk-orchestrator → coverage-auditor → risk-verifier）生成，风险等级与审核状态均为后端返回的原始值。
               </span>
-              <button className="btn btn-ghost" style={{ marginLeft: 'auto', padding: '6px 16px', fontSize: 13 }} onClick={onStart}>
-                重新分析
-              </button>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" style={{ padding: '6px 16px', fontSize: 13 }} onClick={onStart}>
+                  重新分析
+                </button>
+                <button
+                  className="btn btn-primary"
+                  style={{ padding: '6px 16px', fontSize: 13 }}
+                  onClick={handleExportPdf}
+                  disabled={pdfLoading}
+                >
+                  {pdfLoading ? '导出中...' : '导出 PDF'}
+                </button>
+              </div>
             </div>
           </div>
+
+          {pdfError && (
+            <div className="note warn" style={{ marginTop: 12 }}>
+              <span>{pdfError}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

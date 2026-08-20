@@ -1041,48 +1041,92 @@ table.data-table {
 /* 关系图容器 */
 .graph-panel {
   position: relative;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   overflow: hidden;
-  background: linear-gradient(160deg, #0c1b33 0%, #11263f 55%, #0e1f38 100%);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: #f3f7fb;
+  border: 1px solid #e2e8f0;
+  padding: 12px;
 }
+
+/* 图例 */
 .graph-legend {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  z-index: 2;
   display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 8px 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 8px;
   border-radius: var(--radius-sm);
-  background: rgba(10, 22, 40, 0.75);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  font-size: 11px;
-  color: #b9c8e0;
-  backdrop-filter: blur(4px);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #475569;
 }
+
+.legend-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.legend-label {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.legend-divider {
+  width: 1px;
+  height: 16px;
+  background: #e2e8f0;
+}
+
 .graph-legend .lg-item {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  white-space: nowrap;
 }
+
+.graph-legend .lg-dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .graph-legend .lg-line {
   width: 18px;
   height: 0;
-  border-top: 2px solid currentColor;
+  border-top: 2.5px solid currentColor;
 }
+
 .graph-legend .lg-line.dashed {
   border-top-style: dashed;
 }
+
+/* 提示信息 */
 .graph-tip {
-  position: absolute;
-  bottom: 10px;
-  left: 14px;
-  z-index: 2;
-  font-size: 11px;
-  color: #7d90ad;
-  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #64748b;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+}
+
+.graph-stat {
+  color: #475569;
+  font-weight: 500;
+}
+
+.graph-truncated {
+  color: #d97706;
+  font-weight: 500;
+  padding: 2px 8px;
+  background: #fef3c7;
+  border-radius: 4px;
 }
 
 /* 面包屑 */

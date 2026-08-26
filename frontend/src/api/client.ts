@@ -15,6 +15,7 @@ import type {
   RelationNetworkResponse,
   RelationsResponse,
   SearchResponse,
+  TaskResponse,
 } from './types'
 
 /** 前端错误分类：与后端错误码相互独立 */
@@ -137,6 +138,38 @@ export const api = {
       },
       ANALYSIS_TIMEOUT_MS,
     )
+  },
+
+  /** 创建异步分析任务 */
+  createAnalysisTask(companyId: string): Promise<TaskResponse> {
+    return request<TaskResponse>(
+      '/api/analysis/tasks',
+      {
+        method: 'POST',
+        body: JSON.stringify({ company_id: companyId }),
+      },
+    )
+  },
+
+  /** 查询任务状态 */
+  getAnalysisTask(taskId: string): Promise<TaskResponse> {
+    return request<TaskResponse>(
+      `/api/analysis/tasks/${encodeURIComponent(taskId)}`,
+    )
+  },
+
+  /** 查询企业当前活跃任务（无活跃任务时返回 null，不抛异常） */
+  async getCompanyActiveTask(companyId: string): Promise<TaskResponse | null> {
+    try {
+      return await request<TaskResponse>(
+        `/api/analysis/tasks/company/${encodeURIComponent(companyId)}/active`,
+      )
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404 && e.code === 'TASK_NOT_FOUND') {
+        return null
+      }
+      throw e
+    }
   },
 
   /**

@@ -44,19 +44,23 @@ from .deps import (
     ERROR_COMPANY_NOT_FOUND,
     ERROR_INTERNAL,
     ERROR_INVALID_KEYWORD,
+    ERROR_TASK_NOT_FOUND,
 )
 from .harness_adapter import CompanyNotFoundError, HarnessError
 from .models import (
     AnalysisRequest,
     AnalysisResponse,
     BusinessEventsResponse,
+    CreateTaskRequest,
     ErrorDetail,
     JudicialEventsResponse,
     ProfileResponse,
     RelationsResponse,
     RelationNetworkResponse,
     SearchResponse,
+    TaskResponse,
 )
+from .task_manager import TaskManager, TaskInfo
 
 logger = logging.getLogger("risk-api")
 
@@ -313,6 +317,153 @@ def create_analysis(payload: AnalysisRequest) -> AnalysisResponse:
         ) from exc
 
     return AnalysisResponse(**result)
+
+
+# ------------------------------------------------------------
+# 内部工具：TaskInfo → TaskResponse 转换
+# ------------------------------------------------------------
+
+
+def _task_to_response(task: TaskInfo) -> TaskResponse:
+    """将 TaskInfo 转换为 API 响应模型 TaskResponse。
+
+    completed 状态下将 result dict 包装为 AnalysisResponse，
+    其他状态下 result 为 None。
+    """
+    analysis_result = None
+    if task.result is not None:
+        try:
+            analysis_result = AnalysisResponse(**task.result)
+        except Exception:
+            logger.warning("任务 %s 的 result 无法解析为 AnalysisResponse", task.task_id)
+
+    return TaskResponse(
+        task_id=task.task_id,
+        company_id=task.company_id,
+        status=task.status.value,
+        created_at=task.created_at,
+        started_at=task.started_at,
+        finished_at=task.finished_at,
+        error=task.error,
+        result=analysis_result,
+    )
+
+
+# ============================================================
+# 接口 10：创建异步分析任务
+# ============================================================
+
+_task_manager = TaskManager()
+
+
+@router.post(
+    "/analysis/tasks",
+    response_model=TaskResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        409: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="创建异步分析任务",
+    description=(
+        "创建一个异步风险分析任务并立即返回 task_id。"
+        "后台线程将调用 Risk Harness 执行分析（耗时 3-20 分钟）。"
+        "同一企业已有 queued/running 任务时返回现有任务（不重复创建）。"
+    ),
+    tags=["analysis"],
+)
+def create_analysis_task(payload: CreateTaskRequest) -> TaskResponse:
+    """创建异步分析任务，立即返回 task_id。"""
+
+    try:
+        task = _task_manager.create_task(payload.company_id)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_COMPANY_NOT_FOUND, f"未找到企业 {exc.company_id}"
+            ),
+        ) from exc
+
+    return _task_to_response(task)
+
+
+# ============================================================
+# 接口 11：查询任务状态
+# ============================================================
+
+
+@router.get(
+    "/analysis/tasks/{task_id}",
+    response_model=TaskResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="查询分析任务状态",
+    description="根据 task_id 查询异步分析任务的当前状态和结果。",
+    tags=["analysis"],
+)
+def get_analysis_task(task_id: str) -> TaskResponse:
+    """查询任务状态。"""
+
+    task = _task_manager.get_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_TASK_NOT_FOUND, f"未找到任务 {task_id}"
+            ),
+        )
+
+    return _task_to_response(task)
+
+
+# ============================================================
+# 接口 12：查询企业当前活跃任务
+# ============================================================
+
+
+@router.get(
+    "/analysis/tasks/company/{company_id}/active",
+    response_model=TaskResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="查询企业当前活跃任务",
+    description=(
+        "查询指定企业当前的活跃分析任务（queued/running）。"
+        "无活跃任务时返回 404。"
+    ),
+    tags=["analysis"],
+)
+def get_company_active_task(company_id: str) -> TaskResponse:
+    """查询企业当前活跃任务。"""
+
+    cid = deps.normalize_company_id(company_id)
+
+    # 企业存在性检查
+    exists = _run_tool(deps.company_exists, cid)
+    if not exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_COMPANY_NOT_FOUND, f"未找到企业 {cid}"
+            ),
+        )
+
+    task = _task_manager.get_active_task_for_company(cid)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_TASK_NOT_FOUND,
+                f"企业 {cid} 当前无活跃分析任务",
+            ),
+        )
+
+    return _task_to_response(task)
 
 
 # ============================================================

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import * as echarts from 'echarts'
 import type { NetworkEdge, Relation, RelationNetworkResponse } from '../api/types'
 import { relationColor } from '../lib/presentation'
@@ -149,6 +150,11 @@ export default function RelationGraph({
   const [truncated, setTruncated] = useState(false)
   // 记录用户拖拽后的位置
   const draggedPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+
+  // 用于区分拖拽和点击
+  const mouseDownRef = useRef<{ x: number; y: number; time: number } | null>(null)
+  const isDraggingRef = useRef(false)
+  const navigate = useNavigate()
 
   /**
    * 处理节点拖拽结束事件
@@ -512,6 +518,63 @@ export default function RelationGraph({
     chart.on('graphNodesDragged', handleDragEnd as any)
 
     // ============================================================
+    // 拖拽/点击区分逻辑
+    // ============================================================
+    const DRAG_THRESHOLD = 6 // 拖拽距离阈值（像素）
+
+    const handleMouseDown = (e: MouseEvent) => {
+      mouseDownRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        time: Date.now(),
+      }
+      isDraggingRef.current = false
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!mouseDownRef.current) return
+      const dx = e.clientX - mouseDownRef.current.x
+      const dy = e.clientY - mouseDownRef.current.y
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+        isDraggingRef.current = true
+      }
+    }
+
+    const handleMouseUp = () => {
+      mouseDownRef.current = null
+      // 延迟重置 isDragging，让 click 事件能读取到状态
+      setTimeout(() => {
+        isDraggingRef.current = false
+      }, 50)
+    }
+
+    // 绑定鼠标事件
+    el.addEventListener('mousedown', handleMouseDown)
+    el.addEventListener('mousemove', handleMouseMove)
+    el.addEventListener('mouseup', handleMouseUp)
+
+    // ============================================================
+    // 节点点击事件：进入企业详情
+    // ============================================================
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    chart.on('click', (params: any) => {
+      // 只处理节点点击
+      if (params.dataType !== 'node') return
+
+      // 如果是拖拽操作，不触发导航
+      if (isDraggingRef.current) return
+
+      const nodeId = params.data?.id
+      if (!nodeId) return
+
+      // 当前企业节点不跳转
+      if (nodeId === companyId) return
+
+      // 导航到企业详情页
+      navigate(`/company/${nodeId}`)
+    })
+
+    // ============================================================
     // 事件处理
     // ============================================================
     const onResize = () => chart.resize()
@@ -520,10 +583,14 @@ export default function RelationGraph({
       window.removeEventListener('resize', onResize)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       chart.off('graphNodesDragged', handleDragEnd as any)
+      // 移除鼠标事件监听
+      el.removeEventListener('mousedown', handleMouseDown)
+      el.removeEventListener('mousemove', handleMouseMove)
+      el.removeEventListener('mouseup', handleMouseUp)
       chart.dispose()
       chartRef.current = null
     }
-  }, [companyId, companyName, relations, networkData, handleDragEnd])
+  }, [companyId, companyName, relations, networkData, handleDragEnd, navigate])
 
   const nodeCount = networkData?.nodes.length ?? relations?.length ?? 0
   const edgeCount = networkData?.edges.length ?? relations?.length ?? 0
@@ -557,7 +624,7 @@ export default function RelationGraph({
 
       {/* 提示信息 */}
       <div className="graph-tip">
-        <span>🖱️ 拖拽节点 · 滚轮缩放 · 双击居中</span>
+        <span>🖱️ 拖拽节点 · 滚轮缩放 · 双击居中 · 单击节点进入企业详情</span>
         <span className="graph-stat">共 {nodeCount} 个节点 / {edgeCount} 条关系</span>
         {truncated && (
           <span className="graph-truncated">

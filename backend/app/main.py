@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse
 from .api import router
 from .deps import ERROR_INTERNAL, ERROR_INVALID_REQUEST, error_detail
 from .models import HealthResponse
+from .task_manager import TaskManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,6 +58,13 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """服务启动事件：恢复未完成的异步任务状态。"""
+    task_manager = TaskManager()
+    task_manager.startup_recovery()
 
 
 @app.exception_handler(RequestValidationError)

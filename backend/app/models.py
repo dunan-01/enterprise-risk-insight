@@ -255,3 +255,38 @@ class AnalysisResponse(BaseModel):
         None, description="最终报告文件相对路径（runs/web/<id>/report_final.md）"
     )
     duration_seconds: float = Field(..., description="Harness 分析耗时（秒）")
+
+
+# ============================================================
+# 异步任务模型（第五阶段）
+# ============================================================
+
+
+class CreateTaskRequest(BaseModel):
+    """POST /api/analysis/tasks 请求体。"""
+
+    company_id: str = Field(..., min_length=1, description="企业唯一ID，例如 C007")
+
+    @field_validator("company_id")
+    @classmethod
+    def _company_id_not_blank(cls, value: str) -> str:
+        """company_id 必填且不能为空白字符串。"""
+        if not value.strip():
+            raise ValueError("company_id 不能为空")
+        return value
+
+
+class TaskResponse(BaseModel):
+    """异步任务响应模型。
+
+    用于 POST /api/analysis/tasks 和 GET /api/analysis/tasks/{task_id}。
+    """
+
+    task_id: str = Field(..., description="任务唯一ID")
+    company_id: str = Field(..., description="企业唯一ID")
+    status: str = Field(..., description="任务状态: queued / running / completed / failed")
+    created_at: str = Field(..., description="任务创建时间（ISO 8601）")
+    started_at: Optional[str] = Field(None, description="任务开始执行时间（ISO 8601）")
+    finished_at: Optional[str] = Field(None, description="任务完成时间（ISO 8601）")
+    error: Optional[str] = Field(None, description="失败时的错误信息")
+    result: Optional[AnalysisResponse] = Field(None, description="分析结果（仅 completed 时有值")

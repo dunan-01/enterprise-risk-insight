@@ -47,10 +47,10 @@ export default function AnalysisTab({
   state: AnalysisState
   onStart: () => void
 }) {
-  // 等待计时（仅 loading 期间运行；切走再切回会按 startedAt 重新对齐）
+  // 等待计时（仅 task-running 期间运行；切走再切回会按 startedAt 重新对齐）
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
-    if (state.status !== 'loading') return
+    if (state.status !== 'task-running') return
     setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
@@ -102,9 +102,9 @@ export default function AnalysisTab({
               <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" strokeLinecap="round" />
             </svg>
             <span>
-              点击下方按钮将对 <b>{companyName}（{companyId}）</b>执行一次完整 AI 风险分析：
-              由后端 Risk Harness（risk-orchestrator 调查 → coverage-auditor 覆盖审核 → risk-verifier 核验）真实执行，
-              同步阻塞，<b>耗时通常 3-20 分钟</b>（复杂案例可达 10-20 分钟）。分析期间可切换其他 Tab 查看数据，不会中断分析。
+              点击下方按钮将对 <b>{companyName}（{companyId}）</b>提交一次异步 AI 风险分析任务：
+              后端 Risk Harness（risk-orchestrator 调查 → coverage-auditor 覆盖审核 → risk-verifier 核验）将在后台执行。
+              分析期间可切换其他 Tab 查看数据，页面刷新后仍会自动恢复分析状态。
             </span>
           </div>
 
@@ -135,14 +135,14 @@ export default function AnalysisTab({
               启动 AI 风险分析
             </button>
             <div style={{ marginTop: 10, fontSize: 12.5, color: 'var(--text-3)' }}>
-              分析为真实同步调用，请勿重复提交；按钮在分析期间自动禁用
+              提交异步任务后可自由切换 Tab，任务完成后会自动通知
             </div>
           </div>
         </div>
       )}
 
-      {/* ============ loading：真实等待计时 + 静态流程示意 ============ */}
-      {state.status === 'loading' && (
+      {/* ============ task-running：异步任务运行中 ============ */}
+      {state.status === 'task-running' && (
         <div className="card-body">
           <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
@@ -154,7 +154,6 @@ export default function AnalysisTab({
                 <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 2 }}>
                   对 {companyName}（{companyId}）· 已等待{' '}
                   <b style={{ color: 'var(--brand)' }}>{fmtElapsed(state.startedAt, now)}</b>
-                  （复杂案例可能需 10-20 分钟，请耐心等待）
                 </div>
               </div>
             </div>
@@ -168,7 +167,7 @@ export default function AnalysisTab({
             已等待 {fmtElapsed(state.startedAt, now)}
           </div>
 
-          {/* 静态流程示意（标注“分析中”，禁止伪造实时进度百分比） */}
+          {/* 静态流程示意 */}
           <div className="pipeline">
             {PIPELINE_STEPS.map((s, i) => (
               <div key={s.name} className="step">
@@ -187,13 +186,9 @@ export default function AnalysisTab({
             ))}
           </div>
 
-          <div className="note warn" style={{ marginTop: 18 }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="note-icon">
-              <path d="M12 3L2 20h20L12 3z" strokeLinejoin="round" />
-              <path d="M12 10v4M12 17v.5" strokeLinecap="round" />
-            </svg>
+          <div className="note" style={{ marginTop: 18 }}>
             <span>
-              当前展示为分析流程的阶段示意，不代表实时进度。分析期间可自由切换「企业概况 / 工商动态 / 司法风险 / 关联关系」等 Tab，请求不会被中断；本页面不设短超时（最长等待 30 分钟）。
+              后台任务运行中，可自由切换 Tab 查看数据。页面刷新后仍会自动恢复分析状态。
             </span>
           </div>
         </div>

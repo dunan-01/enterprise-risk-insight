@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import type { Relation, RelationNetworkResponse } from '../../api/types'
 import { RelationTypeTag } from '../../components/Badges'
@@ -120,13 +121,14 @@ export default function RelationsTab({
                       return (
                         <tr key={r.relation_id}>
                           <td style={{ minWidth: 180 }}>
-                            <b>{cp.name}</b>
-                            <div
-                              className="mono muted"
-                              style={{ fontSize: 12 }}
+                            <Link
+                              to={`/company/${cp.id}`}
+                              className="company-link"
                             >
-                              {cp.id}
-                            </div>
+                              <span className="company-link-name">{cp.name}</span>
+                              <span className="company-link-id">{cp.id}</span>
+                              <span className="company-link-arrow">→</span>
+                            </Link>
                           </td>
                           <td
                             className="muted"

@@ -156,6 +156,20 @@ export interface AnalysisResponse {
 }
 
 // ============================================================
+// POST /api/analysis/tasks  异步分析任务
+// ============================================================
+export interface TaskResponse {
+  task_id: string
+  company_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed'
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
+  result: AnalysisResponse | null
+}
+
+// ============================================================
 // V1.1 新增：企业关联关系网络
 // ============================================================
 

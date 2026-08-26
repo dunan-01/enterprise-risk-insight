@@ -11,11 +11,11 @@ import JudicialEventsTab from './tabs/JudicialEventsTab'
 import OverviewTab from './tabs/OverviewTab'
 import RelationsTab from './tabs/RelationsTab'
 
-/** AI 分析状态机：loading-history → (done | not-analyzed) → loading → (done | error) */
+/** AI 分析状态机：loading-history → (done | not-analyzed | task-running) → (done | error) */
 export type AnalysisState =
   | { status: 'loading-history' }
   | { status: 'not-analyzed' }
-  | { status: 'loading'; startedAt: number }
+  | { status: 'task-running'; taskId: string; startedAt: number; companyActive: boolean }
   | { status: 'done'; startedAt: number; result: AnalysisResponse }
   | { status: 'error'; startedAt: number; error: ApiError }
 
@@ -41,6 +41,7 @@ export default function CompanyPage() {
   // AI 分析状态提升到页面级：切换 Tab 不中断分析请求
   const [analysis, setAnalysis] = useState<AnalysisState>({ status: 'loading-history' })
   const analysisRunningRef = useRef(false)
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const loadProfile = useCallback(async () => {
     setProfileState('loading')
@@ -55,10 +56,27 @@ export default function CompanyPage() {
     }
   }, [companyId])
 
-  /** 加载已有分析结果（不触发 Harness） */
+  /** 加载已有分析结果（先检查活跃任务，再检查历史结果） */
   const loadHistory = useCallback(async () => {
     setAnalysis({ status: 'loading-history' })
     try {
+      // 先检查是否有活跃任务
+      const activeTask = await api.getCompanyActiveTask(companyId)
+      if (activeTask && (activeTask.status === 'queued' || activeTask.status === 'running')) {
+        // 有活跃任务 → 进入 task-running 状态并启动轮询
+        const startedAt = activeTask.started_at
+          ? new Date(activeTask.started_at).getTime()
+          : Date.now()
+        setAnalysis({
+          status: 'task-running',
+          taskId: activeTask.task_id,
+          startedAt,
+          companyActive: true,
+        })
+        pollTask(activeTask.task_id, startedAt)
+        return
+      }
+      // 无活跃任务 → 检查历史结果
       const result = await api.latestAnalysis(companyId)
       if (result) {
         setAnalysis({ status: 'done', startedAt: Date.now(), result })
@@ -71,29 +89,87 @@ export default function CompanyPage() {
     }
   }, [companyId])
 
+  /** 轮询任务状态 */
+  const pollTask = useCallback((taskId: string, startedAt: number) => {
+    // 清除旧的轮询
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+
+    pollTimerRef.current = setInterval(async () => {
+      try {
+        const task = await api.getAnalysisTask(taskId)
+        if (task.status === 'completed' && task.result) {
+          clearInterval(pollTimerRef.current!)
+          pollTimerRef.current = null
+          setAnalysis({ status: 'done', startedAt, result: task.result })
+        } else if (task.status === 'failed') {
+          clearInterval(pollTimerRef.current!)
+          pollTimerRef.current = null
+          setAnalysis({
+            status: 'error',
+            startedAt,
+            error: new ApiError('HTTP', task.error || '分析失败', 500, 'ANALYSIS_FAILED'),
+          })
+        }
+        // queued/running 继续轮询
+      } catch {
+        // 网络错误暂不处理，继续轮询
+      }
+    }, 3000)
+  }, [])
+
   useEffect(() => {
     // 切换企业时重置分析状态与页面
     analysisRunningRef.current = false
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
     void loadProfile()
     void loadHistory()
+
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
   }, [companyId, loadProfile, loadHistory])
 
   const startAnalysis = useCallback(() => {
     if (analysisRunningRef.current) return
     analysisRunningRef.current = true
     const startedAt = Date.now()
-    setAnalysis({ status: 'loading', startedAt })
+
     api
-      .analyze(companyId)
-      .then((result) => {
-        analysisRunningRef.current = false
-        setAnalysis({ status: 'done', startedAt, result })
+      .createAnalysisTask(companyId)
+      .then((task) => {
+        if (task.status === 'queued' || task.status === 'running') {
+          // 进入 task-running 状态，启动轮询
+          setAnalysis({
+            status: 'task-running',
+            taskId: task.task_id,
+            startedAt,
+            companyActive: false,
+          })
+          pollTask(task.task_id, startedAt)
+        } else if (task.status === 'completed' && task.result) {
+          // 直接完成（理论上不太可能，但做兜底）
+          analysisRunningRef.current = false
+          setAnalysis({ status: 'done', startedAt, result: task.result })
+        } else if (task.status === 'failed') {
+          analysisRunningRef.current = false
+          setAnalysis({
+            status: 'error',
+            startedAt,
+            error: new ApiError('HTTP', task.error || '分析失败', 500, 'ANALYSIS_FAILED'),
+          })
+        }
       })
       .catch((e: ApiError) => {
         analysisRunningRef.current = false
         setAnalysis({ status: 'error', startedAt, error: e })
       })
-  }, [companyId])
+  }, [companyId, pollTask])
 
   const switchTab = (key: TabKey) => {
     setSearchParams(key === 'overview' ? {} : { tab: key }, { replace: true })
@@ -181,7 +257,7 @@ export default function CompanyPage() {
                 className={`tab ${activeTab === t.key ? 'active' : ''}`}
                 onClick={() => switchTab(t.key)}
               >
-                {t.key === 'analysis' && (analysis.status === 'loading' || analysis.status === 'loading-history') && (
+                {t.key === 'analysis' && (analysis.status === 'task-running' || analysis.status === 'loading-history') && (
                   <span className="spin-dot" title="AI 分析进行中" />
                 )}
                 {t.label}

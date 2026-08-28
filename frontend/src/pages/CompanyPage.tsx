@@ -109,6 +109,11 @@ export default function CompanyPage() {
             startedAt,
             error: new ApiError('HTTP', task.error || '分析失败', 500, 'ANALYSIS_FAILED'),
           })
+        } else if (task.status === 'cancelled') {
+          // 任务被新分析替换，停止轮询
+          clearInterval(pollTimerRef.current!)
+          pollTimerRef.current = null
+          // 不更新 analysis 状态，让新任务接管
         }
         // queued/running 继续轮询
       } catch {
@@ -154,6 +159,41 @@ export default function CompanyPage() {
           pollTask(task.task_id, startedAt)
         } else if (task.status === 'completed' && task.result) {
           // 直接完成（理论上不太可能，但做兜底）
+          analysisRunningRef.current = false
+          setAnalysis({ status: 'done', startedAt, result: task.result })
+        } else if (task.status === 'failed') {
+          analysisRunningRef.current = false
+          setAnalysis({
+            status: 'error',
+            startedAt,
+            error: new ApiError('HTTP', task.error || '分析失败', 500, 'ANALYSIS_FAILED'),
+          })
+        }
+      })
+      .catch((e: ApiError) => {
+        analysisRunningRef.current = false
+        setAnalysis({ status: 'error', startedAt, error: e })
+      })
+  }, [companyId, pollTask])
+
+  /** 强制重新分析（替换旧任务，force_new=true） */
+  const startAnalysisForce = useCallback(() => {
+    if (analysisRunningRef.current) return
+    analysisRunningRef.current = true
+    const startedAt = Date.now()
+
+    api
+      .createAnalysisTask(companyId, true)
+      .then((task) => {
+        if (task.status === 'queued' || task.status === 'running') {
+          setAnalysis({
+            status: 'task-running',
+            taskId: task.task_id,
+            startedAt,
+            companyActive: false,
+          })
+          pollTask(task.task_id, startedAt)
+        } else if (task.status === 'completed' && task.result) {
           analysisRunningRef.current = false
           setAnalysis({ status: 'done', startedAt, result: task.result })
         } else if (task.status === 'failed') {
@@ -278,6 +318,7 @@ export default function CompanyPage() {
               companyName={profile.company_name}
               state={analysis}
               onStart={startAnalysis}
+              onStartForce={startAnalysisForce}
             />
           )}
         </>

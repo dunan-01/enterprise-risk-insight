@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AnalysisState } from '../CompanyPage'
 import { EvidenceTag, RiskLevelBadge, VerificationBadge } from '../../components/Badges'
+import InvestigationTrace from '../../components/InvestigationTrace'
 import MarkdownReport from '../../components/MarkdownReport'
 import { ErrorBlock } from '../../components/States'
 import { fmtDuration, fmtElapsed } from '../../lib/format'
@@ -41,11 +42,13 @@ export default function AnalysisTab({
   companyName,
   state,
   onStart,
+  onStartForce,
 }: {
   companyId: string
   companyName: string
   state: AnalysisState
   onStart: () => void
+  onStartForce: () => void
 }) {
   // 等待计时（仅 task-running 期间运行；切走再切回会按 startedAt 重新对齐）
   const [now, setNow] = useState(() => Date.now())
@@ -167,23 +170,9 @@ export default function AnalysisTab({
             已等待 {fmtElapsed(state.startedAt, now)}
           </div>
 
-          {/* 静态流程示意 */}
-          <div className="pipeline">
-            {PIPELINE_STEPS.map((s, i) => (
-              <div key={s.name} className="step">
-                <span className="step-no">STEP {i + 1}</span>
-                <div className="step-name">{s.name}</div>
-                <div className="step-desc">{s.desc}</div>
-                <div className="step-state">
-                  <span className="bar-dots">
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                  分析中…
-                </div>
-              </div>
-            ))}
+          {/* Investigation Trace Timeline */}
+          <div style={{ marginTop: 18 }}>
+            <InvestigationTrace taskId={state.taskId} taskStatus="running" />
           </div>
 
           <div className="note" style={{ marginTop: 18 }}>
@@ -325,7 +314,7 @@ export default function AnalysisTab({
                 报告由 Risk Harness（risk-orchestrator → coverage-auditor → risk-verifier）生成，风险等级与审核状态均为后端返回的原始值。
               </span>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                <button className="btn btn-ghost" style={{ padding: '6px 16px', fontSize: 13 }} onClick={onStart}>
+                <button className="btn btn-ghost" style={{ padding: '6px 16px', fontSize: 13 }} onClick={onStartForce}>
                   重新分析
                 </button>
                 <button

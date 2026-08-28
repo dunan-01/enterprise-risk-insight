@@ -19,7 +19,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import deps
 from .deps import PROJECT_ROOT, company_exists
@@ -299,10 +299,21 @@ def load_latest_analysis(company_id: str) -> Dict[str, Any]:
 # ------------------------------------------------------------
 
 
-def analyze_company(company_id: str) -> Dict[str, Any]:
+def analyze_company(
+    company_id: str,
+    task_dir: Optional[Path] = None,
+    on_event: Optional[Callable[[Dict[str, Any], int], None]] = None,
+) -> Dict[str, Any]:
     """
     对指定企业执行一次完整风险分析（同步阻塞，实测耗时 3-20 分钟；
     复杂案例如 C005 需多轮 verifier 复核，可达 10-20 分钟）。
+
+    参数：
+        company_id: 企业ID
+        task_dir: per-task 输出目录（V1.3 新增），可选。
+            提供时 session_events.jsonl 和 stderr.log 写入该目录。
+        on_event: 实时事件回调（V1.3 新增），可选。
+            每收到一个有效 JSONL event 就调用 on_event(event_dict, event_count)。
 
     返回响应 dict：
         {
@@ -329,7 +340,13 @@ def analyze_company(company_id: str) -> Dict[str, Any]:
         raise CompanyNotFoundError(cid)
 
     # 2. 调用真实 Risk Harness（opencode headless）
-    harness_result = run_harness_analysis(cid)
+    logger.info("[Analyze] before run_harness_analysis company_id=%s", cid)
+    harness_result = run_harness_analysis(
+        cid,
+        task_dir=task_dir,
+        on_event=on_event,
+    )
+    logger.info("[Analyze] run_harness_analysis returned company_id=%s status=%s", cid, harness_result.get("verification_status"))
 
     # 3. best-effort 结构化解析
     report = (harness_result.get("report") or "").strip()

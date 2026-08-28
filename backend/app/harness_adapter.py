@@ -32,7 +32,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("risk-api")
 
@@ -231,7 +231,10 @@ def _parse_stdout(events: List[Dict[str, Any]], stdout_text: str) -> None:
 
 
 def run_harness_analysis(
-    company_id: str, timeout_seconds: Optional[int] = None
+    company_id: str,
+    timeout_seconds: Optional[int] = None,
+    task_dir: Optional[Path] = None,
+    on_event: Optional[Callable[[Dict[str, Any], int], None]] = None,
 ) -> Dict[str, Any]:
     """
     调用 Risk Harness 对指定企业完成一次完整风险分析（同步阻塞）。
@@ -243,6 +246,8 @@ def run_harness_analysis(
             环境变量 HARNESS_TIMEOUT > 默认 1200 秒（20 分钟）。
             复杂案例（多轮 verifier 复核，如 C005）可能耗时 10-20 分钟，
             客户端/HTTP 超时建议设置 ≥ 20 分钟。
+        task_dir: per-task 输出目录，可选。提供时将 session_events.jsonl 和 stderr.log 写入该目录。
+        on_event: 实时事件回调，可选。每收到一个有效 JSONL event 就调用 on_event(event_dict, event_count)。
 
     返回结构化结果：
         {
@@ -261,6 +266,8 @@ def run_harness_analysis(
         超时与"无状态"均会重试 1 次（共最多 2 次尝试）。
     """
     cid = company_id.strip().upper()
+    logger.info("[Harness] run_harness_analysis entered company_id=%s", cid)
+
     timeout_seconds = _resolve_timeout(timeout_seconds)
     opencode_bin = _find_opencode_binary()
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(company_id=cid)
@@ -275,18 +282,29 @@ def run_harness_analysis(
         prompt,
     ]
 
+    logger.info("[Harness] project_root=%s", PROJECT_ROOT)
+    logger.info("[Harness] cwd=%s", PROJECT_ROOT)
+    logger.info("[Harness] command=%s", " ".join(command[:6]) + " ...")
+    logger.info("[Harness] timeout_seconds=%s", timeout_seconds)
+
     start = time.monotonic()
     attempts = 0
     raw_events: List[Dict[str, Any]] = []
     last_stderr = ""
 
+    # 创建 per-task 输出目录（如果提供）
+    if task_dir is not None:
+        task_dir.mkdir(parents=True, exist_ok=True)
+
     with _HARNESS_LOCK:
+        logger.info("[Harness] _HARNESS_LOCK acquired")
         while True:
             attempts += 1
             logger.info(
-                "Harness 分析第 %d/%d 次尝试: %s", attempts, MAX_ATTEMPTS, cid
+                "[Harness] 第 %d/%d 次尝试: %s", attempts, MAX_ATTEMPTS, cid
             )
             try:
+                logger.info("[Harness] subprocess about to start: %s", cid)
                 proc = subprocess.Popen(
                     command,
                     cwd=str(PROJECT_ROOT),
@@ -295,19 +313,95 @@ def run_harness_analysis(
                     stderr=subprocess.PIPE,
                     start_new_session=True,  # 独立进程组，便于超时后整体清理
                 )
+                logger.info("[Harness] subprocess started pid=%s company=%s", proc.pid, cid)
+
+                # --------------------------------------------------------
+                # 流式 stdout / stderr 消费（V1.3 改造）
+                # --------------------------------------------------------
+                events_count = 0
+                stderr_lines: List[str] = []
+
+                def _read_stdout():
+                    """持续读取 stdout JSONL 行，实时解析并回调。"""
+                    nonlocal events_count
+                    assert proc.stdout is not None
+                    for raw_line in iter(proc.stdout.readline, b""):
+                        if not raw_line:
+                            break
+                        ev = _parse_event(raw_line.decode("utf-8", errors="replace"))
+                        if ev:
+                            # 注意：不在此处获取 _HARNESS_LOCK
+                            # raw_events 仅由 stdout 线程写入，主线程在 stdout_thread.join() 后才读取
+                            raw_events.append(ev)
+                            events_count += 1
+                            # 实时写入 session_events.jsonl
+                            if task_dir:
+                                try:
+                                    with open(
+                                        task_dir / "session_events.jsonl",
+                                        "a",
+                                        encoding="utf-8",
+                                    ) as f:
+                                        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+                                except OSError as write_err:
+                                    logger.warning(
+                                        "[Harness] 写入 session_events.jsonl 失败: %s",
+                                        write_err,
+                                    )
+                            # 回调
+                            if on_event:
+                                try:
+                                    on_event(ev, events_count)
+                                except Exception as cb_err:
+                                    logger.warning(
+                                        "[Harness] on_event 回调异常: %s", cb_err
+                                    )
+
+                def _read_stderr():
+                    """持续读取 stderr 行，写入 stderr.log。"""
+                    assert proc.stderr is not None
+                    for raw_line in iter(proc.stderr.readline, b""):
+                        if not raw_line:
+                            break
+                        text = raw_line.decode("utf-8", errors="replace")
+                        stderr_lines.append(text)
+                        if task_dir:
+                            try:
+                                with open(
+                                    task_dir / "stderr.log",
+                                    "a",
+                                    encoding="utf-8",
+                                ) as f:
+                                    f.write(text)
+                            except OSError as write_err:
+                                logger.warning(
+                                    "[Harness] 写入 stderr.log 失败: %s",
+                                    write_err,
+                                )
+
+                stdout_thread = threading.Thread(
+                    target=_read_stdout,
+                    daemon=True,
+                    name=f"harness-stdout-{cid}",
+                )
+                stderr_thread = threading.Thread(
+                    target=_read_stderr,
+                    daemon=True,
+                    name=f"harness-stderr-{cid}",
+                )
+                stdout_thread.start()
+                stderr_thread.start()
+
+                # 主线程等待进程退出（超时用 os.killpg 杀进程组）
                 try:
-                    stdout_bytes, stderr_bytes = proc.communicate(
-                        timeout=timeout_seconds
-                    )
+                    proc.wait(timeout=timeout_seconds)
                 except subprocess.TimeoutExpired:
-                    # 杀掉整个进程组，避免 opencode 子进程残留
                     try:
                         os.killpg(proc.pid, signal.SIGKILL)
                     except (ProcessLookupError, PermissionError):
                         proc.kill()
-                    proc.communicate()
+                    proc.wait()
                     if attempts < MAX_ATTEMPTS:
-                        # 超时纳入自动重试：未达最大尝试次数则重试
                         logger.warning(
                             "第 %d 次尝试超时（%ss），%ss 后重试: %s",
                             attempts, timeout_seconds, RETRY_SLEEP_SECONDS, cid,
@@ -318,28 +412,45 @@ def run_harness_analysis(
                         f"Harness 分析超时（{timeout_seconds}s，"
                         f"尝试 {attempts} 次）：{cid}"
                     ) from None
+
+                # 等待读取线程结束（进程已退出，管道 EOF 会终止线程）
+                stdout_thread.join(timeout=30)
+                stderr_thread.join(timeout=30)
+
             except OSError as exc:
                 # FileNotFoundError / PermissionError 等底层启动失败
                 raise HarnessError(f"opencode 启动失败：{exc}") from exc
 
-            stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+            logger.info(
+                "[Harness] subprocess exited pid=%s return_code=%s company=%s",
+                proc.pid, proc.returncode, cid,
+            )
+
+            stderr_text = "\n".join(stderr_lines).strip()
             if stderr_text:
                 last_stderr = stderr_text
-                logger.warning("opencode stderr: %s", stderr_text[:500])
+                logger.warning("[Harness] opencode stderr: %s", stderr_text[:500])
             if proc.returncode != 0:
                 logger.warning(
-                    "opencode 退出码非 0: %s（stderr: %s）",
+                    "[Harness] opencode 退出码非 0: %s（stderr: %s）",
                     proc.returncode, last_stderr[:300],
                 )
 
-            stdout_text = stdout_bytes.decode("utf-8", errors="replace")
-            _parse_stdout(raw_events, stdout_text)
+            logger.info(
+                "[Harness] events streamed=%d company=%s",
+                events_count, cid,
+            )
 
             full_text = "\n\n".join(_extract_texts(raw_events))
             report, process_text = _split_report(full_text)
             matches = list(VERIFICATION_STATUS_PATTERN.finditer(full_text))
             # 取第一个匹配（真正的状态行总是在报告开头）
             verification_status = matches[0].group(1) if matches else None
+
+            logger.info(
+                "[Harness] verification_status=%s report_len=%d company=%s",
+                verification_status, len(report), cid,
+            )
 
             if verification_status is not None:
                 break
@@ -352,12 +463,12 @@ def run_harness_analysis(
                 )
 
             logger.warning(
-                "未提取到 VERIFICATION_STATUS，%ss 后重试", RETRY_SLEEP_SECONDS
+                "[Harness] 未提取到 VERIFICATION_STATUS，%ss 后重试", RETRY_SLEEP_SECONDS
             )
             time.sleep(RETRY_SLEEP_SECONDS)
 
     duration_seconds = round(time.monotonic() - start, 2)
-    logger.info("Harness 分析完成: %s status=%s 耗时=%ss", cid, verification_status, duration_seconds)
+    logger.info("[Harness] ✓ run_harness_analysis returned company=%s status=%s 耗时=%ss", cid, verification_status, duration_seconds)
 
     return {
         "company_id": cid,

@@ -266,6 +266,7 @@ class CreateTaskRequest(BaseModel):
     """POST /api/analysis/tasks 请求体。"""
 
     company_id: str = Field(..., min_length=1, description="企业唯一ID，例如 C007")
+    force_new: bool = Field(False, description="是否强制创建新任务（替换旧任务）。用于重新分析按钮。")
 
     @field_validator("company_id")
     @classmethod
@@ -284,9 +285,77 @@ class TaskResponse(BaseModel):
 
     task_id: str = Field(..., description="任务唯一ID")
     company_id: str = Field(..., description="企业唯一ID")
-    status: str = Field(..., description="任务状态: queued / running / completed / failed")
+    status: str = Field(..., description="任务状态: queued / running / completed / failed / cancelled")
     created_at: str = Field(..., description="任务创建时间（ISO 8601）")
     started_at: Optional[str] = Field(None, description="任务开始执行时间（ISO 8601）")
     finished_at: Optional[str] = Field(None, description="任务完成时间（ISO 8601）")
     error: Optional[str] = Field(None, description="失败时的错误信息")
-    result: Optional[AnalysisResponse] = Field(None, description="分析结果（仅 completed 时有值")
+    result: Optional[AnalysisResponse] = Field(None, description="分析结果（仅 completed 时有值）")
+    event_count: int = Field(0, description="已收到的事件数（V1.3 新增）")
+    last_event_at: Optional[str] = Field(None, description="最后一个事件的时间（V1.3 新增）")
+    current_stage: Optional[str] = Field(None, description="当前阶段（V1.3 新增）")
+    cancel_reason: Optional[str] = Field(None, description="取消原因（V1.4 新增）")
+    replacement_task_id: Optional[str] = Field(None, description="替换此任务的新任务ID（V1.4 新增）")
+    process_pid: Optional[int] = Field(None, description="Harness 进程 PID（V1.4 新增）")
+    process_alive: bool = Field(False, description="Harness 进程是否存活（V1.4 新增）")
+
+
+# ============================================================
+# Investigation Trace 模型（V1.3 新增）
+# ============================================================
+
+
+class TraceEventResponse(BaseModel):
+    """Investigation Trace 事件条目。"""
+
+    event_id: str = Field(..., description="事件唯一ID")
+    sequence: int = Field(..., description="事件序号")
+    timestamp: str = Field(..., description="事件时间（ISO 8601）")
+    type: str = Field(..., description="事件类型")
+    agent: str = Field(..., description="执行 agent")
+    title: str = Field(..., description="用户可读标题")
+    description: str = Field(..., description="用户可读描述")
+    company_id: Optional[str] = Field(None, description="相关企业ID")
+    company_name: Optional[str] = Field(None, description="相关企业名称")
+    tool: Optional[str] = Field(None, description="原始工具名")
+    evidence_ids: List[str] = Field(default_factory=list, description="关键证据编号")
+    status: str = Field(..., description="事件状态: completed / in_progress / failed")
+
+
+class TraceResponse(BaseModel):
+    """Investigation Trace 响应。"""
+
+    task_id: str = Field(..., description="任务唯一ID")
+    company_id: str = Field(..., description="企业唯一ID")
+    task_status: str = Field(..., description="任务状态")
+    event_count: int = Field(..., description="trace events 数量")
+    events: List[TraceEventResponse] = Field(..., description="trace events 列表")
+
+
+# ============================================================
+# System Status 模型（V1.4 新增）
+# ============================================================
+
+
+class ActiveTaskInfo(BaseModel):
+    """当前活跃任务信息。"""
+
+    task_id: str = Field(..., description="任务唯一ID")
+    company_id: str = Field(..., description="企业唯一ID")
+    status: str = Field(..., description="任务状态")
+    process_pid: Optional[int] = Field(None, description="Harness 进程 PID")
+    process_pgid: Optional[int] = Field(None, description="Harness 进程 PGID")
+    process_alive: bool = Field(False, description="进程是否存活")
+    started_at: Optional[str] = Field(None, description="开始执行时间")
+
+
+class SystemStatusResponse(BaseModel):
+    """系统状态响应。
+
+    显示当前是否有活跃的 Harness 进程运行。
+    """
+
+    active_task: Optional[ActiveTaskInfo] = Field(None, description="当前活跃任务（无则为 null）")
+    harness_process_alive: bool = Field(False, description="是否有 harness 进程存活")
+    pid: Optional[int] = Field(None, description="当前活跃进程 PID")
+    project_root: str = Field(..., description="项目根目录")

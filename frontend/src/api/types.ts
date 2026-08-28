@@ -161,12 +161,19 @@ export interface AnalysisResponse {
 export interface TaskResponse {
   task_id: string
   company_id: string
-  status: 'queued' | 'running' | 'completed' | 'failed'
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   created_at: string
   started_at: string | null
   finished_at: string | null
   error: string | null
   result: AnalysisResponse | null
+  event_count?: number
+  last_event_at?: string | null
+  current_stage?: string | null
+  cancel_reason?: string | null
+  replacement_task_id?: string | null
+  process_pid?: number | null
+  process_alive?: boolean
 }
 
 // ============================================================
@@ -196,4 +203,50 @@ export interface RelationNetworkResponse {
   nodes: NetworkNode[]
   edges: NetworkEdge[]
   truncated: boolean
+}
+
+// ============================================================
+// V1.3 新增：Investigation Trace API
+// ============================================================
+export interface TraceEvent {
+  event_id: string
+  sequence: number
+  timestamp: string
+  type: string
+  agent: string
+  title: string
+  description: string
+  company_id: string | null
+  company_name: string | null
+  tool: string | null
+  evidence_ids: string[]
+  status: string
+}
+
+export interface TraceResponse {
+  task_id: string
+  company_id: string
+  task_status: string
+  event_count: number
+  events: TraceEvent[]
+}
+
+// ============================================================
+// V1.4 新增：System Status API
+// ============================================================
+export interface ActiveTaskInfo {
+  task_id: string
+  company_id: string
+  status: string
+  process_pid: number | null
+  process_pgid: number | null
+  process_alive: boolean
+  started_at: string | null
+}
+
+export interface SystemStatusResponse {
+  active_task: ActiveTaskInfo | null
+  harness_process_alive: boolean
+  pid: number | null
+  project_root: string
 }

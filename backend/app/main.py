@@ -62,9 +62,11 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def startup_event() -> None:
-    """服务启动事件：恢复未完成的异步任务状态。"""
+    """服务启动事件：orphan harness reconciliation + 恢复未完成的异步任务状态。"""
     task_manager = TaskManager()
-    task_manager.startup_recovery()
+    # V1.4: startup reconciliation — 清理 orphan harness processes
+    cleaned = task_manager.startup_reconcile_harness_processes()
+    logger.info("[StartupReconcile] startup done: %d tasks reconciled", cleaned)
 
 
 @app.exception_handler(RequestValidationError)

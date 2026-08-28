@@ -15,7 +15,9 @@ import type {
   RelationNetworkResponse,
   RelationsResponse,
   SearchResponse,
+  SystemStatusResponse,
   TaskResponse,
+  TraceResponse,
 } from './types'
 
 /** 前端错误分类：与后端错误码相互独立 */
@@ -141,12 +143,12 @@ export const api = {
   },
 
   /** 创建异步分析任务 */
-  createAnalysisTask(companyId: string): Promise<TaskResponse> {
+  createAnalysisTask(companyId: string, forceNew = false): Promise<TaskResponse> {
     return request<TaskResponse>(
       '/api/analysis/tasks',
       {
         method: 'POST',
-        body: JSON.stringify({ company_id: companyId }),
+        body: JSON.stringify({ company_id: companyId, force_new: forceNew }),
       },
     )
   },
@@ -155,6 +157,13 @@ export const api = {
   getAnalysisTask(taskId: string): Promise<TaskResponse> {
     return request<TaskResponse>(
       `/api/analysis/tasks/${encodeURIComponent(taskId)}`,
+    )
+  },
+
+  /** 查询任务追踪事件（Trace Timeline） */
+  getAnalysisTaskTrace(taskId: string): Promise<TraceResponse> {
+    return request<TraceResponse>(
+      `/api/analysis/tasks/${encodeURIComponent(taskId)}/trace`,
     )
   },
 
@@ -245,5 +254,10 @@ export const api = {
     } finally {
       clearTimeout(timer)
     }
+  },
+
+  /** V1.4: 查询系统状态（是否有活跃 Harness 进程） */
+  getSystemStatus(): Promise<SystemStatusResponse> {
+    return request<SystemStatusResponse>('/api/analysis/system-status')
   },
 }

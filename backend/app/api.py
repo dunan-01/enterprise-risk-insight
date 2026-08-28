@@ -58,9 +58,12 @@ from .models import (
     RelationsResponse,
     RelationNetworkResponse,
     SearchResponse,
+    SystemStatusResponse,
+    ActiveTaskInfo,
     TaskResponse,
+    TraceResponse,
 )
-from .task_manager import TaskManager, TaskInfo
+from .task_manager import TaskManager, TaskInfo, _TASKS_DIR, _is_pid_alive
 
 logger = logging.getLogger("risk-api")
 
@@ -346,6 +349,13 @@ def _task_to_response(task: TaskInfo) -> TaskResponse:
         finished_at=task.finished_at,
         error=task.error,
         result=analysis_result,
+        event_count=task.event_count,
+        last_event_at=task.last_event_at,
+        current_stage=task.current_stage,
+        cancel_reason=task.cancel_reason,
+        replacement_task_id=task.replacement_task_id,
+        process_pid=task.process_pid,
+        process_alive=task.process_alive,
     )
 
 
@@ -373,15 +383,33 @@ _task_manager = TaskManager()
     tags=["analysis"],
 )
 def create_analysis_task(payload: CreateTaskRequest) -> TaskResponse:
-    """创建异步分析任务，立即返回 task_id。"""
+    """创建异步分析任务，立即返回 task_id。
+
+    SINGLE ACTIVE HARNESS 流程：
+    1. reconcile_existing_harness() —— 清理旧 active / orphan Harness
+    2. 确认系统中不存在旧 risk-orchestrator
+    3. 同企业双击防护：已有 running task 时返回 existing
+    4. force_new=True 时：强制替换旧任务
+    """
 
     try:
-        task = _task_manager.create_task(payload.company_id)
+        task = _task_manager.create_task(
+            payload.company_id,
+            force_new=payload.force_new,
+        )
     except CompanyNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=deps.error_detail(
                 ERROR_COMPANY_NOT_FOUND, f"未找到企业 {exc.company_id}"
+            ),
+        ) from exc
+    except HarnessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=deps.error_detail(
+                "HARNESS_CLEANUP_FAILED",
+                str(exc),
             ),
         ) from exc
 
@@ -464,6 +492,70 @@ def get_company_active_task(company_id: str) -> TaskResponse:
         )
 
     return _task_to_response(task)
+
+
+# ============================================================
+# 接口 13：获取任务的 Investigation Trace（V1.3 新增）
+# ============================================================
+
+
+@router.get(
+    "/analysis/tasks/{task_id}/trace",
+    response_model=TraceResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="获取任务的 Investigation Trace",
+    description=(
+        "根据 task_id 获取任务的 Investigation Trace 事件流。"
+        "返回结构化 trace events，用于前端展示调查过程的时间线。"
+    ),
+    tags=["analysis"],
+)
+def get_analysis_task_trace(task_id: str) -> TraceResponse:
+    """获取任务的 Investigation Trace 事件流。"""
+
+    task = _task_manager.get_task(task_id)
+    if task is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_TASK_NOT_FOUND, f"未找到任务 {task_id}"
+            ),
+        )
+
+    # 从 per-task 目录读取 session_events.jsonl
+    task_dir = _TASKS_DIR / task_id
+    raw_events_file = task_dir / "session_events.jsonl"
+
+    raw_events: List[Dict[str, Any]] = []
+    if raw_events_file.exists():
+        try:
+            with open(raw_events_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        import json as _json
+                        raw_events.append(_json.loads(line))
+                    except _json.JSONDecodeError:
+                        continue
+        except OSError as exc:
+            logger.warning("[Trace] 读取 session_events.jsonl 失败: %s", exc)
+
+    # 转换为结构化 trace events（传入 task_status 以控制 lifecycle 事件）
+    from .trace_service import parse_trace_events
+    trace_events = parse_trace_events(raw_events, task_status=task.status.value)
+
+    return TraceResponse(
+        task_id=task.task_id,
+        company_id=task.company_id,
+        task_status=task.status.value,
+        event_count=len(trace_events),
+        events=trace_events,
+    )
 
 
 # ============================================================
@@ -559,4 +651,52 @@ def export_analysis_pdf(company_id: str) -> FileResponse:
         path=str(pdf_path),
         filename=filename,
         media_type="application/pdf",
+    )
+
+
+# ============================================================
+# 接口 14：系统状态（V1.4 新增）
+# ============================================================
+
+
+@router.get(
+    "/analysis/system-status",
+    response_model=SystemStatusResponse,
+    responses={500: {"model": ErrorDetail}},
+    summary="查询系统状态",
+    description=(
+        "查询当前是否有活跃的 Harness 进程运行。"
+        "用于前端和开发调试确认当前到底有没有 Harness 在执行。"
+    ),
+    tags=["analysis"],
+)
+def get_system_status() -> SystemStatusResponse:
+    """查询系统状态：是否有活跃的 Harness 进程。"""
+    task = _task_manager.get_active_task()
+    if task is None:
+        return SystemStatusResponse(
+            active_task=None,
+            harness_process_alive=False,
+            pid=None,
+            project_root=str(deps.PROJECT_ROOT),
+        )
+
+    pid = task.process_pid
+    alive = False
+    if pid is not None:
+        alive = _is_pid_alive(pid)
+
+    return SystemStatusResponse(
+        active_task=ActiveTaskInfo(
+            task_id=task.task_id,
+            company_id=task.company_id,
+            status=task.status.value,
+            process_pid=task.process_pid,
+            process_pgid=task.process_pgid,
+            process_alive=task.process_alive,
+            started_at=task.started_at,
+        ),
+        harness_process_alive=alive,
+        pid=pid,
+        project_root=str(deps.PROJECT_ROOT),
     )

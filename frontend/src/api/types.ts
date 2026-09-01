@@ -143,6 +143,7 @@ export interface RelationsResponse {
 // POST /api/analysis
 // ------------------------------------------------------------
 export interface AnalysisResponse {
+  task_id?: string | null
   company_id: string
   status: string // 恒为 completed
   report: string // Markdown 全文
@@ -249,4 +250,74 @@ export interface SystemStatusResponse {
   harness_process_alive: boolean
   pid: number | null
   project_root: string
+}
+
+// ============================================================
+// V1.4 新增：Evidence Detail API
+// ============================================================
+export interface EvidenceResponse {
+  evidence_id: string
+  evidence_type: 'business' | 'judicial' | 'relation'
+  company_id: string | null
+  company_name: string | null
+  from_company_id?: string | null
+  from_company_name?: string | null
+  to_company_id?: string | null
+  to_company_name?: string | null
+  data: Record<string, any>
+  source: string | null
+}
+
+// ============================================================
+// V1.6 新增：Investigation Network API
+// ============================================================
+
+export interface InvestigationNode {
+  company_id: string
+  company_name: string
+  industry: string | null
+  business_status: string | null
+  depth: number
+  is_root: boolean
+  investigation_status: 'root' | 'investigated' | 'discovered' | 'not_investigated'
+  investigation_order: number | null
+  first_investigated_at: string | null
+  evidence_ids: string[]
+  evidence_count: number
+  supplementary: boolean
+  risk_level: string | null
+  risk_tags: string[]
+}
+
+export interface InvestigationEdge {
+  relation_id: string
+  source: string
+  target: string
+  relation_type: string
+  equity_ratio: number | null
+  amount: number | null
+  status: string | null
+  investigation_status: 'traversed' | 'discovered' | 'not_used'
+  first_used_at: string | null
+  supplementary: boolean
+  evidence_referenced: boolean
+  investigation_reason: string | null
+}
+
+export interface InvestigationNetworkStats {
+  total_network_nodes: number
+  investigated_nodes: number
+  discovered_nodes: number
+  uninvestigated_nodes: number
+  investigated_edges: number
+  total_evidence: number
+}
+
+export interface InvestigationNetworkResponse {
+  task_id: string | null
+  company_id: string
+  task_status: string
+  nodes: InvestigationNode[]
+  edges: InvestigationEdge[]
+  stats: InvestigationNetworkStats
 }

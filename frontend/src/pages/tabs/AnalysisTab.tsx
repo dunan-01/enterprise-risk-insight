@@ -43,12 +43,14 @@ export default function AnalysisTab({
   state,
   onStart,
   onStartForce,
+  onCancel,
 }: {
   companyId: string
   companyName: string
   state: AnalysisState
   onStart: () => void
   onStartForce: () => void
+  onCancel: () => void
 }) {
   // 等待计时（仅 task-running 期间运行；切走再切回会按 startedAt 重新对齐）
   const [now, setNow] = useState(() => Date.now())
@@ -61,6 +63,8 @@ export default function AnalysisTab({
 
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false)
 
   const handleExportPdf = async () => {
     setPdfLoading(true)
@@ -75,8 +79,21 @@ export default function AnalysisTab({
     }
   }
 
+  const handleCancelConfirm = async () => {
+    setShowCancelConfirm(false)
+    setCancelling(true)
+    try {
+      await onCancel()
+    } catch (e) {
+      console.error('[Cancel] Cancel failed:', e)
+    } finally {
+      setCancelling(false)
+    }
+  }
+
   const result = state.status === 'done' ? state.result : null
   const error = state.status === 'error' ? state.error : null
+  const doneTaskId = state.status === 'done' ? state.taskId : null
 
   return (
     <div className="card">
@@ -170,15 +187,125 @@ export default function AnalysisTab({
             已等待 {fmtElapsed(state.startedAt, now)}
           </div>
 
+          {/* 取消分析按钮 */}
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            {!showCancelConfirm ? (
+              <button
+                className="btn btn-ghost"
+                style={{ padding: '8px 20px', fontSize: 13, color: '#d92d20', borderColor: '#f5c2c7' }}
+                onClick={() => setShowCancelConfirm(true)}
+                disabled={cancelling}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6, verticalAlign: -2 }}>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" />
+                  <line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+                取消分析
+              </button>
+            ) : (
+              <div style={{
+                display: 'inline-flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 10,
+                padding: '14px 20px',
+                border: '1px solid #f5c2c7',
+                borderRadius: 'var(--radius)',
+                background: '#fef2f2',
+              }}>
+                <div style={{ fontSize: 13, color: '#592d2d', fontWeight: 500 }}>
+                  确定要取消本次 AI 风险分析吗？
+                </div>
+                <div style={{ fontSize: 12, color: '#8c5a5a' }}>
+                  已完成的调查过程将保留，但不会生成完整风险报告。
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 16px', fontSize: 12 }}
+                    onClick={() => setShowCancelConfirm(false)}
+                  >
+                    继续分析
+                  </button>
+                  <button
+                    className="btn"
+                    style={{
+                      padding: '6px 16px',
+                      fontSize: 12,
+                      background: '#d92d20',
+                      color: 'white',
+                      opacity: cancelling ? 0.6 : 1,
+                    }}
+                    onClick={handleCancelConfirm}
+                    disabled={cancelling}
+                  >
+                    {cancelling ? '正在取消...' : '取消分析'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Investigation Trace Timeline */}
           <div style={{ marginTop: 18 }}>
-            <InvestigationTrace taskId={state.taskId} taskStatus="running" />
+            <InvestigationTrace taskId={state.taskId} taskStatus={cancelling ? "cancelling" : "running"} />
           </div>
 
           <div className="note" style={{ marginTop: 18 }}>
             <span>
               后台任务运行中，可自由切换 Tab 查看数据。页面刷新后仍会自动恢复分析状态。
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ============ cancelled：分析已取消 ============ */}
+      {state.status === 'cancelled' && (
+        <div className="card-body">
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '16px 24px',
+              border: '1px solid #f5c2c7',
+              borderRadius: 'var(--radius)',
+              background: '#fef2f2',
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d92d20" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="15" y1="9" x2="9" y2="15" />
+                <line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#592d2d' }}>
+                  分析已取消
+                </div>
+                <div style={{ fontSize: 12.5, color: '#8c5a5a', marginTop: 2 }}>
+                  用户主动终止本次企业风险调查
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Investigation Trace（cancelled 后保留展示） */}
+          {doneTaskId && (
+            <div style={{ marginTop: 18 }}>
+              <InvestigationTrace taskId={doneTaskId} taskStatus="cancelled" />
+            </div>
+          )}
+
+          <div className="note" style={{ marginTop: 18 }}>
+            <span>
+              本次分析未完成，已完成的调查过程已保留。可点击下方按钮重新分析。
+            </span>
+          </div>
+
+          <div style={{ marginTop: 14, textAlign: 'center' }}>
+            <button className="btn btn-primary" onClick={onStartForce} style={{ padding: '10px 24px', fontSize: 14 }}>
+              重新分析
+            </button>
           </div>
         </div>
       )}
@@ -217,6 +344,13 @@ export default function AnalysisTab({
       {/* ============ done：完整结果展示 ============ */}
       {state.status === 'done' && result && (
         <div className="card-body">
+          {/* Investigation Trace（completed 后保留展示） */}
+          {doneTaskId && (
+            <div style={{ marginBottom: 18 }}>
+              <InvestigationTrace taskId={doneTaskId} taskStatus="completed" />
+            </div>
+          )}
+
           {/* 结果指标区 */}
           <div className="result-grid">
             <div className="result-cell">

@@ -37,14 +37,19 @@ from fastapi import APIRouter, HTTPException, Query, status
 from . import deps
 from .analysis_service import AnalysisNotFoundError, analyze_company, load_latest_analysis
 from .relation_network_service import build_relation_network
+from .investigation_network_service import build_investigation_network
 from .pdf_service import generate_report_pdf
+from .evidence_registry import get_evidence_by_id as get_evidence_from_registry
 from .deps import (
     ERROR_ANALYSIS_FAILED,
     ERROR_ANALYSIS_NOT_FOUND,
     ERROR_COMPANY_NOT_FOUND,
+    ERROR_EVIDENCE_NOT_FOUND,
     ERROR_INTERNAL,
     ERROR_INVALID_KEYWORD,
     ERROR_TASK_NOT_FOUND,
+    ERROR_TASK_ALREADY_COMPLETED,
+    ERROR_TASK_ALREADY_FINISHED,
 )
 from .harness_adapter import CompanyNotFoundError, HarnessError
 from .models import (
@@ -53,6 +58,8 @@ from .models import (
     BusinessEventsResponse,
     CreateTaskRequest,
     ErrorDetail,
+    EvidenceResponse,
+    InvestigationNetworkResponse,
     JudicialEventsResponse,
     ProfileResponse,
     RelationsResponse,
@@ -448,6 +455,57 @@ def get_analysis_task(task_id: str) -> TaskResponse:
 
 
 # ============================================================
+# 接口 11.5：取消分析任务
+# ============================================================
+
+
+@router.post(
+    "/analysis/tasks/{task_id}/cancel",
+    response_model=TaskResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        409: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="取消分析任务",
+    description=(
+        "主动取消正在运行或排队中的分析任务。"
+        "running 任务将终止 OpenCode risk-orchestrator 进程组。"
+        "completed/failed 任务不会被修改。"
+    ),
+    tags=["analysis"],
+)
+def cancel_analysis_task(task_id: str) -> TaskResponse:
+    """取消分析任务。"""
+    try:
+        task = _task_manager.cancel_task(task_id)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "TASK_NOT_FOUND":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=deps.error_detail(ERROR_TASK_NOT_FOUND, f"未找到任务 {task_id}"),
+            )
+        elif msg == "TASK_ALREADY_COMPLETED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=deps.error_detail("TASK_ALREADY_COMPLETED", "任务已完成，无法取消"),
+            )
+        elif msg == "TASK_ALREADY_FINISHED":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=deps.error_detail("TASK_ALREADY_FINISHED", "任务已结束，无法取消"),
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=deps.error_detail(ERROR_INTERNAL, msg),
+            )
+    
+    return _task_to_response(task)
+
+
+# ============================================================
 # 接口 12：查询企业当前活跃任务
 # ============================================================
 
@@ -556,6 +614,81 @@ def get_analysis_task_trace(task_id: str) -> TraceResponse:
         event_count=len(trace_events),
         events=trace_events,
     )
+
+
+# ============================================================
+# 接口 13.5：获取任务的调查网络（V1.6 新增）
+# ============================================================
+
+
+@router.get(
+    "/analysis/tasks/{task_id}/investigation-network",
+    response_model=InvestigationNetworkResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="获取任务的调查网络",
+    description=(
+        "根据 task_id 获取任务的调查网络（Investigation Network）。"
+        "在完整关系网络基础上叠加调查 Trace 数据，"
+        "标注每个节点和边的调查状态、证据关联和遍历顺序。"
+    ),
+    tags=["analysis"],
+)
+def get_investigation_network(task_id: str) -> InvestigationNetworkResponse:
+    """获取任务的调查网络。"""
+
+    result = build_investigation_network(task_id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_TASK_NOT_FOUND, f"未找到任务 {task_id}"
+            ),
+        )
+
+    return InvestigationNetworkResponse(**result)
+
+
+# ============================================================
+# 接口 13.6：获取历史分析的调查网络（无 task_id）
+# ============================================================
+
+
+@router.get(
+    "/companies/{company_id}/investigation-network",
+    response_model=InvestigationNetworkResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="获取历史分析的调查网络",
+    description=(
+        "根据 company_id 从 session_events.jsonl 加载历史分析的调查网络。"
+        "用于没有 task 记录的历史分析（如早期版本生成的分析结果）。"
+    ),
+    tags=["analysis"],
+)
+def get_company_investigation_network(company_id: str) -> InvestigationNetworkResponse:
+    """获取历史分析的调查网络（从 session_events.jsonl 加载）。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    from .investigation_network_service import build_investigation_network_from_session_events
+
+    result = build_investigation_network_from_session_events(cid)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_TASK_NOT_FOUND,
+                f"企业 {cid} 没有历史分析记录（session_events.jsonl 不存在）",
+            ),
+        )
+
+    return InvestigationNetworkResponse(**result)
 
 
 # ============================================================
@@ -700,3 +833,65 @@ def get_system_status() -> SystemStatusResponse:
         pid=pid,
         project_root=str(deps.PROJECT_ROOT),
     )
+
+
+# ============================================================
+# 接口 15：Evidence 详情（V1.4 新增）
+# ============================================================
+
+
+@router.get(
+    "/evidence/{evidence_id}",
+    response_model=EvidenceResponse,
+    responses={
+        404: {"model": ErrorDetail},
+        500: {"model": ErrorDetail},
+    },
+    summary="查询 Evidence 详情",
+    description=(
+        "根据 Evidence ID（Bxxx/Jxxx/Rxxx）查询确定性数据库事实。"
+        "Bxxx → business_events，Jxxx → judicial_events，Rxxx → relations。"
+        "返回原始记录，不包含模型判断。"
+    ),
+    tags=["evidence"],
+)
+def get_evidence_detail(evidence_id: str) -> EvidenceResponse:
+    """查询 Evidence 详情（确定性数据库事实）。
+
+    使用统一的 Evidence Registry 查询，确保：
+    1. 报告中的所有 Bxxx/Jxxx/Rxxx 全部经过 Evidence Registry
+    2. 不直接解析 Markdown
+    3. 兼容已有数据
+    """
+
+    eid = evidence_id.strip().upper()
+    if not eid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=deps.error_detail(
+                ERROR_INVALID_KEYWORD, "evidence_id 不能为空"
+            ),
+        )
+
+    # 验证格式：必须以 B/J/R 开头 + 数字
+    if not (len(eid) >= 2 and eid[0] in ("B", "J", "R") and eid[1:].isdigit()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=deps.error_detail(
+                ERROR_INVALID_KEYWORD,
+                f"无效的 Evidence ID 格式：{eid}（应为 Bxxx/Jxxx/Rxxx）",
+            ),
+        )
+
+    # 使用统一的 Evidence Registry 查询
+    result = get_evidence_from_registry(eid)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=deps.error_detail(
+                ERROR_EVIDENCE_NOT_FOUND,
+                f"未找到证据 {eid}",
+            ),
+        )
+
+    return EvidenceResponse(**result)

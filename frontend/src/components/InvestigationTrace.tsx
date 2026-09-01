@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { TraceEvent, TraceResponse } from '../api/types'
 import { EvidenceTag } from './Badges'
+import EvidenceDetailDrawer from './EvidenceDetailDrawer'
 
 // ------------------------------------------------------------
 // 时间格式化
@@ -34,6 +35,10 @@ function eventTypeStyle(evt: TraceEvent): EventTypeStyle {
   if (t === 'analysis_failed') {
     return { icon: 'alert', color: '#d92d20', bgColor: '#fde8e7' }
   }
+  // 取消事件
+  if (t === 'analysis_cancelled') {
+    return { icon: 'alert', color: '#d92d20', bgColor: '#fef2f2' }
+  }
   // 审核事件（菱形）
   if (t === 'coverage_started' || t === 'coverage_result') {
     return { icon: 'diamond', color: '#7c3aed', bgColor: '#f1eafe' }
@@ -56,7 +61,7 @@ function eventTypeStyle(evt: TraceEvent): EventTypeStyle {
 // ------------------------------------------------------------
 // 单个 Timeline Item
 // ------------------------------------------------------------
-function TimelineItem({ event, isLast }: { event: TraceEvent; isLast: boolean }) {
+function TimelineItem({ event, isLast, onEvidenceClick }: { event: TraceEvent; isLast: boolean; onEvidenceClick?: (id: string) => void }) {
   const style = eventTypeStyle(event)
   const time = fmtTime(event.timestamp)
 
@@ -124,7 +129,7 @@ function TimelineItem({ event, isLast }: { event: TraceEvent; isLast: boolean })
         {event.evidence_ids.length > 0 && (
           <div className="trace-evidence">
             {event.evidence_ids.map((id) => (
-              <EvidenceTag key={id} id={id} />
+              <EvidenceTag key={id} id={id} onClick={onEvidenceClick} />
             ))}
           </div>
         )}
@@ -147,6 +152,7 @@ export default function InvestigationTrace({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [drawerEvidenceId, setDrawerEvidenceId] = useState<string | null>(null)
 
   const fetchTrace = useCallback(async () => {
     try {
@@ -165,7 +171,7 @@ export default function InvestigationTrace({
     // 初始加载
     void fetchTrace()
 
-    // 轮询逻辑：running 时每 3 秒，completed/failed 时停止
+    // 轮询逻辑：running 时每 3 秒，completed/failed/cancelled 时停止
     if (taskStatus === 'running' || taskStatus === 'queued') {
       pollRef.current = setInterval(() => {
         void fetchTrace()
@@ -180,9 +186,9 @@ export default function InvestigationTrace({
     }
   }, [fetchTrace, taskStatus])
 
-  // 当 taskStatus 变化时（如从 running 变为 completed），停止轮询
+  // 当 taskStatus 变化时（如从 running 变为 completed/failed/cancelled），停止轮询
   useEffect(() => {
-    if (taskStatus === 'completed' || taskStatus === 'failed') {
+    if (taskStatus === 'completed' || taskStatus === 'failed' || taskStatus === 'cancelled') {
       if (pollRef.current) {
         clearInterval(pollRef.current)
         pollRef.current = null
@@ -249,9 +255,14 @@ export default function InvestigationTrace({
             key={evt.event_id}
             event={evt}
             isLast={i === trace.events.length - 1}
+            onEvidenceClick={setDrawerEvidenceId}
           />
         ))}
       </div>
+      <EvidenceDetailDrawer
+        evidenceId={drawerEvidenceId}
+        onClose={() => setDrawerEvidenceId(null)}
+      />
     </div>
   )
 }

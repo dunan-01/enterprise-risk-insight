@@ -25,11 +25,16 @@ export function VerificationBadge({ raw, big }: { raw: string | null; big?: bool
 }
 
 /** 证据编号徽标（B 工商 / J 司法 / R 关系，按前缀着色） */
-export function EvidenceTag({ id }: { id: string }) {
+export function EvidenceTag({ id, onClick }: { id: string; onClick?: (id: string) => void }) {
   const tone = evidenceTone(id)
   const prefix = id.slice(0, 1).toUpperCase()
   return (
-    <span className={`evidence-tag ${tone.className}`}>
+    <span
+      className={`evidence-tag ${tone.className}`}
+      onClick={onClick ? () => onClick(id) : undefined}
+      style={onClick ? { cursor: 'pointer' } : undefined}
+      title={onClick ? '点击查看原始事实' : undefined}
+    >
       <span className="ev-prefix">{prefix}</span>
       {id.slice(1)}
       <span style={{ fontWeight: 400, fontSize: 11, opacity: 0.8 }}>

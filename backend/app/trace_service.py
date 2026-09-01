@@ -37,6 +37,7 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
     "risk_get_business_events": "查询工商事件",
     "risk_get_judicial_events": "查询司法事件",
     "risk_get_company_relations": "查询企业关联关系",
+    "risk_get_company_snapshot": "查询企业快照",
     "risk_search_company": "搜索企业",
 }
 
@@ -46,6 +47,7 @@ TOOL_ACTION_VERBS: Dict[str, str] = {
     "risk_get_business_events": "查询",
     "risk_get_judicial_events": "查询",
     "risk_get_company_relations": "查询",
+    "risk_get_company_snapshot": "查询",
     "risk_search_company": "搜索",
 }
 
@@ -203,6 +205,10 @@ def parse_trace_events(
             tool_output = str(state.get("output", ""))
 
             if not tool_name:
+                continue
+
+            # 过滤非 risk_* 开头的工具（如 todowrite, task 等 Agent 内部事件）
+            if not tool_name.startswith("risk_"):
                 continue
 
             # 提取 company_id
@@ -405,6 +411,22 @@ def parse_trace_events(
             "evidence_ids": [],
             "status": "failed",
         })
+    elif task_status == "cancelled":
+        sequence += 1
+        trace_events.append({
+            "event_id": _gen_event_id(),
+            "sequence": sequence,
+            "timestamp": _now_iso(),
+            "type": "analysis_cancelled",
+            "agent": "risk-orchestrator",
+            "title": "分析已取消",
+            "description": "用户主动终止本次企业风险调查",
+            "company_id": None,
+            "company_name": None,
+            "tool": None,
+            "evidence_ids": [],
+            "status": "completed",
+        })
 
     return trace_events
 
@@ -435,6 +457,8 @@ def get_current_stage(events: List[dict]) -> str:
             return "completed"
         elif ev_type == "analysis_failed":
             return "failed"
+        elif ev_type == "analysis_cancelled":
+            return "cancelled"
         elif ev_type == "report_generated":
             return "generating_report"
         elif ev_type == "verification_result":

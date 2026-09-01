@@ -10,6 +10,8 @@ import type {
   AnalysisResponse,
   ApiErrorBody,
   BusinessEventsResponse,
+  EvidenceResponse,
+  InvestigationNetworkResponse,
   JudicialEventsResponse,
   ProfileResponse,
   RelationNetworkResponse,
@@ -167,6 +169,20 @@ export const api = {
     )
   },
 
+  /** V1.6: 查询任务调查网络（Investigation Network） */
+  getInvestigationNetwork(taskId: string): Promise<InvestigationNetworkResponse> {
+    return request<InvestigationNetworkResponse>(
+      `/api/analysis/tasks/${encodeURIComponent(taskId)}/investigation-network`,
+    )
+  },
+
+  /** V1.6: 获取历史分析的调查网络（从 session_events.jsonl 加载） */
+  getCompanyInvestigationNetwork(companyId: string): Promise<InvestigationNetworkResponse> {
+    return request<InvestigationNetworkResponse>(
+      `/api/companies/${encodeURIComponent(companyId)}/investigation-network`,
+    )
+  },
+
   /** 查询企业当前活跃任务（无活跃任务时返回 null，不抛异常） */
   async getCompanyActiveTask(companyId: string): Promise<TaskResponse | null> {
     try {
@@ -179,6 +195,14 @@ export const api = {
       }
       throw e
     }
+  },
+
+  /** 取消分析任务 */
+  async cancelAnalysisTask(taskId: string): Promise<TaskResponse> {
+    return request<TaskResponse>(
+      `/api/analysis/tasks/${encodeURIComponent(taskId)}/cancel`,
+      { method: 'POST' },
+    )
   },
 
   /**
@@ -259,5 +283,12 @@ export const api = {
   /** V1.4: 查询系统状态（是否有活跃 Harness 进程） */
   getSystemStatus(): Promise<SystemStatusResponse> {
     return request<SystemStatusResponse>('/api/analysis/system-status')
+  },
+
+  /** V1.4: 查询 Evidence 详情（确定性数据库事实） */
+  getEvidence(evidenceId: string): Promise<EvidenceResponse> {
+    return request<EvidenceResponse>(
+      `/api/evidence/${encodeURIComponent(evidenceId)}`,
+    )
   },
 }

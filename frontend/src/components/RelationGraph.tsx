@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import * as echarts from 'echarts'
-import type { NetworkEdge, Relation, RelationNetworkResponse } from '../api/types'
+import type {
+  InvestigationEdge,
+  InvestigationNetworkResponse,
+  InvestigationNode,
+  NetworkEdge,
+  Relation,
+  RelationNetworkResponse,
+} from '../api/types'
 import { relationColor } from '../lib/presentation'
 
 /**
@@ -51,6 +58,9 @@ interface GraphNode {
   industry?: string | null
   businessStatus?: string | null
   depth?: number
+  riskLevel?: string
+  riskTags?: string[]
+  evidenceIds?: string[]
 }
 
 // ============================================================
@@ -84,6 +94,41 @@ const COLORS = {
 }
 
 // ============================================================
+// V1.6 调查网络专用颜色
+// ============================================================
+
+const INV_COLORS = {
+  // 节点
+  root: '#1d4ed8',
+  rootBorder: '#3b82f6',
+  investigated: '#0891b2',        // teal
+  investigatedBorder: '#22d3ee',
+  discovered: '#94a3b8',          // gray
+  discoveredBorder: '#cbd5e1',
+  notInvestigated: '#cbd5e1',     // faint gray
+  notInvestigatedBorder: '#e2e8f0',
+  supplementaryBorder: '#e8730c', // orange border for 补查
+
+  // 边
+  traversed: '#2563eb',           // thick blue
+  discoveredEdge: '#94a3b8',      // normal gray
+  notUsed: '#cbd5e1',             // thin faint
+
+  // 标签
+  nodeLabel: '#ffffff',
+  nodeLabelBg: 'rgba(30,58,138,0.92)',
+  dimLabel: '#64748b',
+  dimLabelBg: 'rgba(255,255,255,0.85)',
+
+  edgeLabel: '#1e293b',
+  edgeLabelBg: 'rgba(255,255,255,0.92)',
+  edgeLabelBorder: '#cbd5e1',
+  dimEdgeLabel: '#94a3b8',
+  dimEdgeLabelBg: 'rgba(245,247,251,0.8)',
+  dimEdgeLabelBorder: '#e2e8f0',
+}
+
+// ============================================================
 // 辅助函数
 // ============================================================
 
@@ -96,14 +141,25 @@ function truncateName(name: string, maxLen: number = 10): string {
 }
 
 /**
- * 格式化边标签
+ * 判断关系类型是否有方向性
+ */
+function isDirectedRelation(relationType: string | null | undefined): boolean {
+  if (!relationType) return false
+  // 有方向性的关系：股权、对外投资、担保
+  return relationType.includes('股权') || 
+         relationType.includes('投资') || 
+         relationType.includes('担保')
+}
+
+/**
+ * 格式化边标签（动作式）
  */
 function formatEdgeLabel(edge: NetworkEdge): string {
   if (edge.relation_type) {
     // 股权比例
     if (edge.equity_ratio !== null && edge.equity_ratio !== undefined) {
       const percent = Math.round(edge.equity_ratio * 100)
-      return `${percent}% ${edge.relation_type}`
+      return `持股${percent}%`
     }
     // 金额
     if (edge.amount !== null && edge.amount !== undefined) {
@@ -111,7 +167,11 @@ function formatEdgeLabel(edge: NetworkEdge): string {
         edge.amount >= 10000
           ? `${Math.round(edge.amount / 10000)}万`
           : `${edge.amount}`
-      return `${amountStr}${edge.relation_type}`
+      // 担保关系
+      if (edge.relation_type.includes('担保')) {
+        return `提供担保${amountStr}`
+      }
+      return `投资${amountStr}`
     }
     // 仅类型
     return edge.relation_type
@@ -129,6 +189,113 @@ function getNodeColor(depth: number, isRoot: boolean): { fill: string; border: s
 }
 
 // ============================================================
+// V1.6: 调查网络节点/边样式
+// ============================================================
+
+function getInvNodeStyle(node: InvestigationNode): {
+  fill: string
+  border: string
+  borderWidth: number
+  opacity: number
+  symbolSize: number
+} {
+  const isRoot = node.is_root || node.investigation_status === 'root'
+  const supp = node.supplementary
+
+  if (isRoot) {
+    return {
+      fill: INV_COLORS.root,
+      border: supp ? INV_COLORS.supplementaryBorder : INV_COLORS.rootBorder,
+      borderWidth: supp ? 3 : 3,
+      opacity: 1,
+      symbolSize: 78,
+    }
+  }
+
+  switch (node.investigation_status) {
+    case 'investigated':
+      return {
+        fill: INV_COLORS.investigated,
+        border: supp ? INV_COLORS.supplementaryBorder : INV_COLORS.investigatedBorder,
+        borderWidth: supp ? 3 : 2,
+        opacity: 1,
+        symbolSize: 54,
+      }
+    case 'discovered':
+      return {
+        fill: INV_COLORS.discovered,
+        border: supp ? INV_COLORS.supplementaryBorder : INV_COLORS.discoveredBorder,
+        borderWidth: supp ? 3 : 2,
+        opacity: 0.85,
+        symbolSize: 44,
+      }
+    case 'not_investigated':
+      return {
+        fill: INV_COLORS.notInvestigated,
+        border: supp ? INV_COLORS.supplementaryBorder : INV_COLORS.notInvestigatedBorder,
+        borderWidth: supp ? 2 : 1,
+        opacity: 0.45,
+        symbolSize: 38,
+      }
+    default:
+      return {
+        fill: INV_COLORS.notInvestigated,
+        border: INV_COLORS.notInvestigatedBorder,
+        borderWidth: 1,
+        opacity: 0.45,
+        symbolSize: 38,
+      }
+  }
+}
+
+function getInvEdgeStyle(edge: InvestigationEdge): {
+  color: string
+  width: number
+  type: 'solid' | 'dashed'
+  opacity: number
+} {
+  if (edge.supplementary) {
+    return {
+      color: '#e8730c',
+      width: edge.investigation_status === 'traversed' ? 3 : 2,
+      type: edge.relation_type?.includes('担保') ? 'dashed' : 'solid',
+      opacity: 0.9,
+    }
+  }
+
+  switch (edge.investigation_status) {
+    case 'traversed':
+      return {
+        color: INV_COLORS.traversed,
+        width: 3.5,
+        type: edge.relation_type?.includes('担保') ? 'dashed' : 'solid',
+        opacity: 1,
+      }
+    case 'discovered':
+      return {
+        color: INV_COLORS.discoveredEdge,
+        width: 2,
+        type: 'solid',
+        opacity: 0.7,
+      }
+    case 'not_used':
+      return {
+        color: INV_COLORS.notUsed,
+        width: 1,
+        type: 'solid',
+        opacity: 0.35,
+      }
+    default:
+      return {
+        color: INV_COLORS.notUsed,
+        width: 1,
+        type: 'solid',
+        opacity: 0.35,
+      }
+  }
+}
+
+// ============================================================
 // 主组件
 // ============================================================
 
@@ -137,13 +304,17 @@ export default function RelationGraph({
   companyName,
   relations,
   networkData,
+  investigationData,
   height = 580,
+  onNodeClick,
 }: {
   companyId: string
   companyName: string
   relations?: Relation[]
   networkData?: RelationNetworkResponse
+  investigationData?: InvestigationNetworkResponse
   height?: number
+  onNodeClick?: (nodeId: string, evidenceIds: string[]) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
@@ -188,6 +359,13 @@ export default function RelationGraph({
     let edges: Array<{
       source: string
       target: string
+      relationId?: string
+      relationType?: string
+      equityRatio?: number | null
+      amount?: number | null
+      investigationReason?: string | null
+      symbol?: string[]
+      symbolSize?: number
       label: {
         show: boolean
         formatter: string
@@ -197,14 +375,164 @@ export default function RelationGraph({
         padding: number[]
         borderColor: string
         borderWidth: number
+        rotate?: number
       }
       lineStyle: { color: string; width: number; type: 'solid' | 'dashed' }
     }> = []
 
     // ============================================================
+    // V1.6: 最高优先 —— 调查网络数据（AI调查网络模式）
+    // ============================================================
+    if (investigationData && investigationData.nodes.length > 0) {
+      setTruncated(false)
+
+      // 构建节点
+      const seenNodes = new Set<string>()
+      for (const node of investigationData.nodes) {
+        if (seenNodes.has(node.company_id)) continue
+        seenNodes.add(node.company_id)
+
+        const isRoot = node.is_root || node.investigation_status === 'root'
+        const style = getInvNodeStyle(node)
+        const draggedPos = draggedPositionsRef.current.get(node.company_id)
+
+        // 是否显示证据 badge
+        const showEvidenceBadge = node.evidence_count > 0
+        const riskLevel = node.risk_level || '未评估'
+        const riskTags = node.risk_tags || []
+
+        nodes.push({
+          id: node.company_id,
+          name: node.company_name,
+          symbolSize: style.symbolSize,
+          x: draggedPos?.x,
+          y: draggedPos?.y,
+          fixed: draggedPos ? true : undefined,
+          itemStyle: {
+            color: style.fill,
+            borderColor: style.border,
+            borderWidth: style.borderWidth,
+            shadowBlur: isRoot ? 12 : 6,
+            shadowColor: isRoot ? 'rgba(29,78,216,0.35)' : 'rgba(37,99,235,0.15)',
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
+          },
+          label: {
+            show: true,
+            formatter: (p: unknown) => {
+              const params = p as { data?: GraphNode }
+              const data = params?.data
+              const id = data?.id || node.company_id
+              const name = data?.name || node.company_name
+              const truncated = truncateName(name, isRoot ? 10 : 6)
+              const badge = showEvidenceBadge ? ` 📎${node.evidence_count}` : ''
+              // 风险等级标签
+              const riskBadge = riskLevel !== '未评估' ? ` ⚠️${riskLevel}` : ''
+              return `${id}\n${truncated}${riskBadge}${badge}`
+            },
+            color: node.investigation_status === 'not_investigated'
+              ? INV_COLORS.dimLabel
+              : isRoot
+                ? INV_COLORS.nodeLabel
+                : INV_COLORS.nodeLabel,
+            fontSize: isRoot ? 12 : 10,
+            fontWeight: isRoot ? 'bold' : 'normal',
+            lineHeight: isRoot ? 16 : 13,
+            backgroundColor: node.investigation_status === 'not_investigated'
+              ? INV_COLORS.dimLabelBg
+              : INV_COLORS.nodeLabelBg,
+            borderRadius: 4,
+            padding: [2, 4],
+            borderColor: style.border,
+            borderWidth: 1,
+          },
+          value: node.company_id,
+          companyName: node.company_name,
+          industry: node.industry,
+          businessStatus: node.business_status,
+          depth: node.depth,
+          riskLevel: riskLevel,
+          riskTags: riskTags,
+          evidenceIds: node.evidence_ids,
+        })
+      }
+
+      // 构建边
+      for (const edge of investigationData.edges) {
+        const edgeStyle = getInvEdgeStyle(edge)
+        const isDim = edge.investigation_status === 'not_used'
+        const hasDirection = isDirectedRelation(edge.relation_type)
+        
+        const formatInvEdgeLabel = (e: InvestigationEdge): string => {
+          // 关系类型（动作式）
+          let relationStr = ''
+          if (e.relation_type) {
+            if (e.amount !== null && e.amount !== undefined) {
+              const s = e.amount >= 10000 ? `${Math.round(e.amount / 10000)}万` : `${e.amount}`
+              if (e.relation_type.includes('担保')) {
+                relationStr = `提供担保${s}`
+              } else if (e.relation_type.includes('投资')) {
+                relationStr = `投资${s}`
+              } else if (e.equity_ratio !== null && e.equity_ratio !== undefined) {
+                const percent = Math.round(e.equity_ratio * 100)
+                relationStr = `持股${percent}%`
+              } else {
+                relationStr = e.relation_type
+              }
+            } else if (e.equity_ratio !== null && e.equity_ratio !== undefined) {
+              const percent = Math.round(e.equity_ratio * 100)
+              relationStr = `持股${percent}%`
+            } else {
+              relationStr = e.relation_type
+            }
+          } else {
+            relationStr = '关联'
+          }
+
+          // 调查原因
+          const reason = e.investigation_reason
+          if (reason) {
+            return `${relationStr}\n${reason}`
+          }
+          return relationStr
+        }
+
+        edges.push({
+          source: edge.source,
+          target: edge.target,
+          relationId: edge.relation_id,
+          relationType: edge.relation_type,
+          equityRatio: edge.equity_ratio,
+          amount: edge.amount,
+          investigationReason: edge.investigation_reason,
+          // 有方向性的关系添加箭头
+          ...(hasDirection ? {
+            symbol: ['none', 'arrow'],
+            symbolSize: 8,
+          } : {}),
+          label: {
+            show: !isDim,
+            formatter: formatInvEdgeLabel(edge),
+            color: isDim ? INV_COLORS.dimEdgeLabel : INV_COLORS.edgeLabel,
+            backgroundColor: isDim ? INV_COLORS.dimEdgeLabelBg : INV_COLORS.edgeLabelBg,
+            borderRadius: 4,
+            padding: [3, 8],
+            borderColor: isDim ? INV_COLORS.dimEdgeLabelBorder : INV_COLORS.edgeLabelBorder,
+            borderWidth: 1,
+            rotate: 0, // 保持水平
+          },
+          lineStyle: {
+            color: edgeStyle.color,
+            width: edgeStyle.width,
+            type: edgeStyle.type,
+          },
+        })
+      }
+    }
+    // ============================================================
     // 优先使用完整网络数据
     // ============================================================
-    if (networkData && networkData.nodes.length > 0) {
+    else if (networkData && networkData.nodes.length > 0) {
       setTruncated(networkData.truncated)
 
       // 构建节点
@@ -222,7 +550,7 @@ export default function RelationGraph({
         nodes.push({
           id: node.company_id,
           name: node.company_name,
-          symbolSize: isRoot ? 72 : node.depth === 1 ? 52 : 40,
+          symbolSize: isRoot ? 65 : node.depth === 1 ? 48 : 36,
           x: draggedPos?.x,
           y: draggedPos?.y,
           fixed: draggedPos ? true : undefined,
@@ -246,12 +574,12 @@ export default function RelationGraph({
               return `${id}\n${truncated}`
             },
             color: isRoot ? COLORS.rootLabel : COLORS.nodeLabel,
-            fontSize: isRoot ? 13 : 11,
+            fontSize: isRoot ? 12 : 10,
             fontWeight: isRoot ? 'bold' : 'normal',
-            lineHeight: isRoot ? 18 : 15,
+            lineHeight: isRoot ? 16 : 13,
             backgroundColor: COLORS.nodeLabelBg,
             borderRadius: 4,
-            padding: [4, 8],
+            padding: [2, 4],
             borderColor: colors.border,
             borderWidth: 1,
           },
@@ -267,10 +595,18 @@ export default function RelationGraph({
       for (const edge of networkData.edges) {
         const color = relationColor(edge.relation_type)
         const isGuarantee = edge.relation_type?.includes('担保')
+        const hasDirection = isDirectedRelation(edge.relation_type)
 
         edges.push({
           source: edge.source,
           target: edge.target,
+          relationId: edge.relation_id,
+          relationType: edge.relation_type,
+          // 有方向性的关系添加箭头
+          ...(hasDirection ? {
+            symbol: ['none', 'arrow'],
+            symbolSize: 8,
+          } : {}),
           label: {
             show: true,
             formatter: formatEdgeLabel(edge),
@@ -280,6 +616,7 @@ export default function RelationGraph({
             padding: [3, 8],
             borderColor: COLORS.edgeLabelBorder,
             borderWidth: 1,
+            rotate: 0, // 保持水平
           },
           lineStyle: {
             color,
@@ -301,7 +638,7 @@ export default function RelationGraph({
         {
           id: companyId,
           name: companyName,
-          symbolSize: 72,
+          symbolSize: 65,
           x: draggedPos?.x,
           y: draggedPos?.y,
           fixed: draggedPos ? true : undefined,
@@ -321,16 +658,16 @@ export default function RelationGraph({
               const data = params?.data
               const id = data?.id || companyId
               const name = data?.name || companyName
-              const truncated = truncateName(name, 12)
+              const truncated = truncateName(name, 10)
               return `${id}\n${truncated}`
             },
             color: COLORS.rootLabel,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: 'bold',
-            lineHeight: 18,
+            lineHeight: 16,
             backgroundColor: COLORS.nodeLabelBg,
             borderRadius: 4,
-            padding: [4, 8],
+            padding: [2, 4],
             borderColor: COLORS.rootBorder,
             borderWidth: 1,
           },
@@ -356,7 +693,7 @@ export default function RelationGraph({
           nodes.push({
             id: counter,
             name: counterName,
-            symbolSize: 52,
+            symbolSize: 48,
             x: nodeDraggedPos?.x,
             y: nodeDraggedPos?.y,
             fixed: nodeDraggedPos ? true : undefined,
@@ -376,15 +713,15 @@ export default function RelationGraph({
                 const data = params?.data
                 const id = data?.id || counter
                 const name = data?.name || counterName
-                const truncated = truncateName(name, 8)
+                const truncated = truncateName(name, 6)
                 return `${id}\n${truncated}`
               },
               color: COLORS.nodeLabel,
-              fontSize: 11,
-              lineHeight: 15,
+              fontSize: 10,
+              lineHeight: 13,
               backgroundColor: COLORS.nodeLabelBg,
               borderRadius: 4,
-              padding: [4, 8],
+              padding: [2, 4],
               borderColor: colors.border,
               borderWidth: 1,
             },
@@ -395,19 +732,47 @@ export default function RelationGraph({
 
         const color = relationColor(r.relation_type)
         const isGuarantee = r.relation_type.includes('担保')
+        const hasDirection = isDirectedRelation(r.relation_type)
+
+        // 动作式标签
+        let edgeLabel = r.relation_type
+        if (r.amount !== null && r.amount !== undefined) {
+          const amountStr = r.amount >= 10000 ? `${Math.round(r.amount / 10000)}万` : `${r.amount}`
+          if (isGuarantee) {
+            edgeLabel = `提供担保${amountStr}`
+          } else if (r.relation_type.includes('投资')) {
+            edgeLabel = `投资${amountStr}`
+          } else if (r.equity_ratio !== null && r.equity_ratio !== undefined) {
+            const percent = Math.round(r.equity_ratio * 100)
+            edgeLabel = `持股${percent}%`
+          }
+        } else if (r.equity_ratio !== null && r.equity_ratio !== undefined) {
+          const percent = Math.round(r.equity_ratio * 100)
+          edgeLabel = `持股${percent}%`
+        }
 
         edges.push({
           source: r.from_company_id,
           target: r.to_company_id,
+          relationId: r.relation_id,
+          relationType: r.relation_type,
+          equityRatio: r.equity_ratio,
+          amount: r.amount,
+          // 有方向性的关系添加箭头
+          ...(hasDirection ? {
+            symbol: ['none', 'arrow'],
+            symbolSize: 8,
+          } : {}),
           label: {
             show: true,
-            formatter: r.relation_type,
+            formatter: edgeLabel,
             color: COLORS.edgeLabel,
             backgroundColor: COLORS.edgeLabelBg,
             borderRadius: 4,
             padding: [3, 8],
             borderColor: COLORS.edgeLabelBorder,
             borderWidth: 1,
+            rotate: 0, // 保持水平
           },
           lineStyle: {
             color,
@@ -443,9 +808,53 @@ export default function RelationGraph({
             if (d.industry) lines.push(`<div style="color:#64748b;font-size:12px;margin-top:4px">行业: ${d.industry}</div>`)
             if (d.businessStatus) lines.push(`<div style="color:#64748b;font-size:12px">状态: ${d.businessStatus}</div>`)
             if (d.depth !== undefined && d.depth > 0) lines.push(`<div style="color:#2563eb;font-size:12px;margin-top:4px">距离: ${d.depth} 跳</div>`)
+            // 风险信息
+            if (d.riskLevel) lines.push(`<div style="color:#dc2626;font-size:12px;margin-top:4px">风险等级: ${d.riskLevel}</div>`)
+            if (d.riskTags && d.riskTags.length > 0) lines.push(`<div style="color:#dc2626;font-size:12px">风险标签: ${d.riskTags.join('、')}</div>`)
             return lines.join('')
           }
-          return `<div style="color:#64748b;font-size:12px">关联关系</div><div style="margin-top:4px">${p.value[0]} → ${p.value[1]}</div>`
+          // 边 tooltip 显示详细关系信息
+          const edgeData = p.data as any
+          const relType = edgeData?.relationType ?? '关联关系'
+          const relId = edgeData?.relationId ?? ''
+          const equityRatio = edgeData?.equityRatio
+          const amount = edgeData?.amount
+          const investigationReason = edgeData?.investigationReason
+          const badgeColor = relId.startsWith('R') ? '#0891b2' : '#64748b'
+          
+          // 构建关系说明
+          let relationDesc = ''
+          if (equityRatio !== null && equityRatio !== undefined) {
+            const percent = Math.round(equityRatio * 100)
+            relationDesc = `持股${percent}%`
+          } else if (amount !== null && amount !== undefined) {
+            const amountStr = amount >= 10000 ? `${Math.round(amount / 10000)}万` : `${amount}`
+            if (relType.includes('担保')) {
+              relationDesc = `提供担保${amountStr}`
+            } else {
+              relationDesc = `投资${amountStr}`
+            }
+          } else {
+            relationDesc = relType
+          }
+          
+          const lines = [
+            `<div style="font-weight:600;font-size:13px;color:#0f172a;margin-bottom:8px">关系详情</div>`,
+            `<div style="display:flex;gap:8px;margin-bottom:4px"><span style="color:#64748b;font-size:12px;min-width:60px">起点:</span><span style="font-size:12px">${p.value[0]}</span></div>`,
+            `<div style="display:flex;gap:8px;margin-bottom:4px"><span style="color:#64748b;font-size:12px;min-width:60px">终点:</span><span style="font-size:12px">${p.value[1]}</span></div>`,
+            `<div style="display:flex;gap:8px;margin-bottom:4px"><span style="color:#64748b;font-size:12px;min-width:60px">类型:</span><span style="font-size:12px">${relType}</span></div>`,
+            `<div style="display:flex;gap:8px;margin-bottom:8px"><span style="color:#64748b;font-size:12px;min-width:60px">说明:</span><span style="font-size:12px">${relationDesc}</span></div>`,
+          ]
+          
+          if (investigationReason) {
+            lines.push(`<div style="padding:6px 8px;background:#f0f9ff;border-radius:4px;font-size:11px;color:#0369a1">💡 调查原因: ${investigationReason}</div>`)
+          }
+          
+          if (relId) {
+            lines.push(`<div style="margin-top:8px"><span style="display:inline-block;font-family:monospace;font-size:11px;font-weight:600;color:${badgeColor};background:${badgeColor}18;padding:1px 6px;border-radius:3px">${relId}</span></div>`)
+          }
+          
+          return lines.join('')
         },
       },
       series: [
@@ -457,27 +866,28 @@ export default function RelationGraph({
           roam: true,
           draggable: true,
           force: {
-            repulsion: 600,
-            edgeLength: [180, 280],
-            gravity: 0.06,
-            friction: 0.7,
+            repulsion: 1200,
+            edgeLength: [300, 500],
+            gravity: 0.03,
+            friction: 0.4,
             layoutAnimation: true,
           },
           // 节点标签
           label: {
             show: true,
-            fontSize: 12,
-            lineHeight: 16,
+            fontSize: 11,
+            lineHeight: 14,
             backgroundColor: COLORS.nodeLabelBg,
             borderRadius: 4,
-            padding: [4, 8],
+            padding: [2, 4],
             borderColor: 'rgba(148,163,184,0.3)',
             borderWidth: 1,
+            rotate: 0,
             formatter: (p: { data: GraphNode }) => {
               const data = p.data
               const id = data?.id || ''
               const name = data?.name || ''
-              const truncated = truncateName(name, 10)
+              const truncated = truncateName(name, 8)
               return `${id}\n${truncated}`
             },
           },
@@ -492,6 +902,7 @@ export default function RelationGraph({
             borderColor: COLORS.edgeLabelBorder,
             borderWidth: 1,
             color: COLORS.edgeLabel,
+            rotate: 0, // 保持水平
           },
           // 高亮效果
           emphasis: {
@@ -570,6 +981,13 @@ export default function RelationGraph({
       // 当前企业节点不跳转
       if (nodeId === companyId) return
 
+      // 如果在调查网络模式且有 onNodeClick 回调，打开证据面板
+      if (investigationData && onNodeClick) {
+        const evidenceIds = params.data?.evidenceIds || []
+        onNodeClick(nodeId, evidenceIds)
+        return
+      }
+
       // 导航到企业详情页
       navigate(`/company/${nodeId}`)
     })
@@ -590,7 +1008,7 @@ export default function RelationGraph({
       chart.dispose()
       chartRef.current = null
     }
-  }, [companyId, companyName, relations, networkData, handleDragEnd, navigate])
+  }, [companyId, companyName, relations, networkData, investigationData, handleDragEnd, navigate])
 
   const nodeCount = networkData?.nodes.length ?? relations?.length ?? 0
   const edgeCount = networkData?.edges.length ?? relations?.length ?? 0

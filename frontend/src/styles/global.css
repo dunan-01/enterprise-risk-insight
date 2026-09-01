@@ -1479,3 +1479,381 @@ table.data-table {
     display: none;
   }
 }
+
+/* ============================================================
+   Evidence Detail Drawer（V1.4）
+   ============================================================ */
+
+.ev-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+  z-index: 3000;
+  transition: opacity 0.2s ease;
+}
+
+.ev-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 90vw);
+  background: var(--surface);
+  box-shadow: -6px 0 32px rgba(10, 22, 40, 0.18);
+  z-index: 3001;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  overflow: hidden;
+}
+
+.ev-drawer-open {
+  transform: translateX(0);
+}
+
+.ev-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.ev-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ev-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ev-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ev-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.ev-header-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.ev-id {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border-left: 3px solid var(--brand);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.ev-type {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ev-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.ev-section {
+  margin-bottom: 18px;
+}
+
+.ev-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+.ev-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ev-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-light, var(--border));
+}
+
+.ev-label {
+  flex-shrink: 0;
+  min-width: 80px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+
+.ev-value {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.ev-company-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--brand-soft);
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.12s;
+}
+
+.ev-company-link:hover {
+  background: #d4e2fa;
+}
+
+.ev-company-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.ev-company-id {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--text-3);
+}
+
+.ev-relation-companies {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ev-relation-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ev-relation-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ev-relation-arrow {
+  font-size: 18px;
+  color: var(--text-3);
+  margin: 0 2px;
+}
+
+.ev-source {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.ev-source-value {
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.ev-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.ev-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ev-error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ============================================================
+   Evidence Badge（Markdown 报告内可点击）
+   ============================================================ */
+
+.ev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, box-shadow 0.12s;
+  text-decoration: none;
+  vertical-align: baseline;
+}
+
+.ev-badge:hover {
+  box-shadow: 0 0 0 2px rgba(28, 92, 214, 0.25);
+}
+
+.ev-badge-business {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.ev-badge-business:hover {
+  background: #bfdbfe;
+}
+
+.ev-badge-judicial {
+  color: #6d28d9;
+  background: #ede9fe;
+}
+
+.ev-badge-judicial:hover {
+  background: #ddd6fe;
+}
+
+.ev-badge-relation {
+  color: #0e7490;
+  background: #cffafe;
+}
+
+.ev-badge-relation:hover {
+  background: #a5f3fc;
+}
+
+/* ============================================================
+   Investigation Network Legend（V1.6）
+   ============================================================ */
+
+.inv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  color: #475569;
+}
+
+.inv-legend-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.inv-legend-label {
+  font-weight: 600;
+  color: #64748b;
+}
+
+.inv-legend-divider {
+  width: 1px;
+  height: 16px;
+  background: #e2e8f0;
+}
+
+.inv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.inv-legend-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.inv-legend-dot-hollow {
+  background: transparent;
+  border-width: 2px;
+  border-style: solid;
+}
+
+.inv-legend-dot-faint {
+  opacity: 0.55;
+}
+
+.inv-legend-line {
+  width: 18px;
+  height: 0;
+  border-top: 2px solid;
+}
+
+.inv-legend-line-thick {
+  height: 0;
+  border-top-width: 3.5px;
+}
+
+.inv-legend-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-left: auto;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.inv-legend-stats b {
+  font-family: var(--mono);
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* 模式切换按钮组 */
+.view-mode-toggle {
+  display: flex;
+  gap: 8px;
+}

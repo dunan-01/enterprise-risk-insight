@@ -365,6 +365,7 @@ class TaskManager:
                     instance = super().__new__(cls)
                     instance._tasks: Dict[str, TaskInfo] = {}
                     instance._memory_lock = threading.Lock()
+                    instance._cancel_events: Dict[str, threading.Event] = {}
                     cls._instance = instance
         return cls._instance
 
@@ -382,6 +383,36 @@ class TaskManager:
                 if task.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
                     return task
         return None
+
+    def get_latest_completed_task_for_company(self, company_id: str) -> Optional[TaskInfo]:
+        """获取企业最新已完成的任务（completed）。
+
+        扫描内存中的任务，查找同一企业的最新已完成任务。
+        同时从磁盘加载未缓存的任务进行检查（覆盖重启场景）。
+        """
+        cid = company_id.strip().upper()
+        candidates: list[TaskInfo] = []
+
+        # 扫描内存中的已完成任务
+        with self._memory_lock:
+            for task in self._tasks.values():
+                if task.company_id == cid and task.status == TaskStatus.COMPLETED:
+                    candidates.append(task)
+
+        # 扫描磁盘上的任务文件（进程重启后可能内存为空）
+        if not candidates:
+            self._load_all_tasks_from_disk()
+            with self._memory_lock:
+                for task in self._tasks.values():
+                    if task.company_id == cid and task.status == TaskStatus.COMPLETED:
+                        candidates.append(task)
+
+        if not candidates:
+            return None
+
+        # 按创建时间排序，返回最新的
+        candidates.sort(key=lambda t: t.created_at, reverse=True)
+        return candidates[0]
 
     def get_active_task_for_company(self, company_id: str) -> Optional[TaskInfo]:
         """获取企业当前活跃任务（queued/running）。
@@ -533,6 +564,92 @@ class TaskManager:
             )
 
         return cancelled_task_id
+
+    def cancel_task(self, task_id: str, reason: str = "user_cancelled") -> TaskInfo:
+        """用户主动取消指定任务。
+        
+        行为：
+        - queued → 直接 cancelled（无需杀进程）
+        - running → terminate_harness_process → cancelled
+        - completed/failed/cancelled → 返回幂等结果（不修改已有状态）
+        
+        返回 cancel 后的 TaskInfo。
+        """
+        logger.info("[Cancel] request received: task_id=%s reason=%s", task_id, reason)
+        
+        # 1. 先从内存或磁盘加载 task（复用 get_task()）
+        task = self.get_task(task_id)
+        if task is None:
+            logger.warning("[Cancel] task not found: %s", task_id)
+            raise ValueError("TASK_NOT_FOUND")
+        
+        logger.info("[Cancel] task loaded: task_id=%s status=%s company=%s pid=%s alive=%s",
+                     task_id, task.status.value, task.company_id,
+                     task.process_pid, task.process_alive)
+        
+        # 2. 如果 task 不存在 → 抛出 ValueError("TASK_NOT_FOUND")
+        # 已在上方处理
+        
+        # 3. 如果 status == COMPLETED → 抛出 ValueError("TASK_ALREADY_COMPLETED")
+        if task.status == TaskStatus.COMPLETED:
+            raise ValueError("TASK_ALREADY_COMPLETED")
+        
+        # 4. 如果 status == FAILED → 抛出 ValueError("TASK_ALREADY_FINISHED")
+        if task.status == TaskStatus.FAILED:
+            raise ValueError("TASK_ALREADY_FINISHED")
+        
+        # 5. 如果 status == CANCELLED → 直接返回当前 task（幂等）
+        if task.status == TaskStatus.CANCELLED:
+            return task
+        
+        # 6. 如果 status == QUEUED:
+        if task.status == TaskStatus.QUEUED:
+            task.status = TaskStatus.CANCELLED
+            task.finished_at = _now_iso()
+            task.cancel_reason = reason
+            task.process_alive = False
+            self._persist_task(task)
+            logger.info(
+                "[Task] queued → cancelled: task_id=%s company=%s reason=%s",
+                task.task_id, task.company_id, reason,
+            )
+            return task
+        
+        # 7. 如果 status == RUNNING:
+        if task.status == TaskStatus.RUNNING:
+            logger.info("[Cancel] terminating running task: task_id=%s pid=%s pgid=%s",
+                         task_id, task.process_pid, task.process_pgid)
+            # 设置取消信号事件（通知后台线程停止）
+            cancel_event = self._cancel_events.get(task_id)
+            if cancel_event:
+                cancel_event.set()
+                logger.info("[Cancel] cancel_event set for task %s", task_id)
+            
+            # 终止 harness 进程
+            self.terminate_harness_process(task, reason=reason)
+            
+            # 更新任务状态
+            task.status = TaskStatus.CANCELLED
+            task.finished_at = _now_iso()
+            task.cancel_reason = reason
+            task.process_alive = False
+            self._persist_task(task)
+            
+            # 生成 trace.json（保留取消前的调查轨迹）
+            task_dir = _TASKS_DIR / task.task_id
+            if task_dir.exists():
+                self._generate_trace_json(task, task_dir)
+            
+            logger.info(
+                "[Task] running → cancelled: task_id=%s company=%s reason=%s",
+                task.task_id, task.company_id, reason,
+            )
+            logger.info("[Cancel] completed: task_id=%s status=cancelled", task_id)
+            return task
+        
+        # 理论上不会到这里
+        logger.info("[Cancel] completed (no-op): task_id=%s status=%s", task_id, task.status.value)
+        return task
 
     def assert_single_harness_invariant(self) -> None:
         """启动新任务前的硬性检查：确认系统中不存在旧的 risk-orchestrator process。
@@ -901,6 +1018,10 @@ class TaskManager:
         task_timeout = _resolve_task_timeout()
         watchdog_cancelled = threading.Event()
 
+        # V1.5: 创建取消信号事件，传递给 harness_adapter 和 watchdog
+        cancel_event = threading.Event()
+        self._cancel_events[task_id] = cancel_event
+
         def _watchdog():
             """Watchdog：超时后终止进程并标记为 failed。"""
             if watchdog_cancelled.wait(timeout=task_timeout):
@@ -912,6 +1033,8 @@ class TaskManager:
             )
             # 终止 harness process
             self.terminate_harness_process(task, reason="analysis_timeout")
+            # V1.5: 设置取消信号，防止后台线程覆盖状态
+            cancel_event.set()
             with self._memory_lock:
                 current = self._tasks.get(task_id)
                 if current and current.status in (TaskStatus.QUEUED, TaskStatus.RUNNING):
@@ -928,13 +1051,18 @@ class TaskManager:
         )
         watchdog_thread.start()
 
-        # PID tracking: subprocess 启动后记录 PID/PGID
-        # 通过 harness_adapter 的回调来记录（在 on_event 之前）
-        _proc_ref = {"pid": None, "pgid": None}
-
-        # 包装 on_event：首次调用时从 task metadata 获取 PID
-        def _on_event_with_pid(event_dict: dict, event_count: int) -> None:
-            _on_event(event_dict, event_count)
+        # V1.5: on_process_start 回调：从 Popen 获取准确 PID，替代不可靠的 pgrep
+        def _on_process_start(pid: int, pgid: int) -> None:
+            """subprocess 启动回调：直接从 Popen.pid 获取 PID。"""
+            task.process_pid = pid
+            task.process_pgid = pgid
+            task.process_alive = True
+            self._persist_task(task)
+            logger.info(
+                "[Task] harness process started (via callback): "
+                "task=%s pid=%s pgid=%s",
+                task_id, pid, pgid,
+            )
 
         process = None
         try:
@@ -944,62 +1072,25 @@ class TaskManager:
                 task_id, task.company_id,
             )
 
-            # 在调用前启动一个线程监控 /proc 或用 ps 检测 PID
-            # 由于 analyze_company 是同步阻塞的，我们需要在子线程中检测
-            _pid_detected = threading.Event()
-
-            def _detect_pid():
-                """在 subprocess 启动后检测其 PID。"""
-                for _ in range(60):  # 最多检测 60 秒
-                    if _pid_detected.wait(timeout=1.0):
-                        return
-                    # 检查是否有 risk-orchestrator 进程
-                    try:
-                        result = subprocess.run(
-                            ["pgrep", "-f", "opencode.*run.*risk-orchestrator"],
-                            capture_output=True,
-                            text=True,
-                            timeout=3,
-                        )
-                        if result.stdout.strip():
-                            pids = result.stdout.strip().split("\n")
-                            if pids and pids[0]:
-                                pid = int(pids[0])
-                                task.process_pid = pid
-                                task.process_pgid = pid  # start_new_session=True → PGID = PID
-                                task.process_alive = True
-                                self._persist_task(task)
-                                _proc_ref["pid"] = pid
-                                _proc_ref["pgid"] = pid
-                                _pid_detected.set()
-                                logger.info(
-                                    "[Task] harness process detected: "
-                                    "task=%s pid=%s pgid=%s",
-                                    task_id, pid, pid,
-                                )
-                                return
-                    except (subprocess.TimeoutExpired, ValueError, OSError):
-                        pass
-
-            pid_detector = threading.Thread(
-                target=_detect_pid,
-                daemon=True,
-                name=f"pid-detector-{task_id}",
-            )
-            pid_detector.start()
-
             result = analyze_company(
                 task.company_id,
                 task_dir=task_dir,
-                on_event=_on_event_with_pid,
+                on_event=_on_event,
+                task_id=task_id,
+                cancelled_event=cancel_event,
+                on_process_start=_on_process_start,
             )
-
-            # 取消 PID 检测线程
-            _pid_detected.set()
-            pid_detector.join(timeout=5)
 
             # 取消 watchdog
             watchdog_cancelled.set()
+
+            # V1.5: 检查是否已被取消（cancel_task 可能已经设置了状态）
+            if cancel_event.is_set():
+                logger.info(
+                    "[Task] 取消信号已设置，跳过 completed 状态更新: %s",
+                    task_id,
+                )
+                return
 
             # 即使 return_code=0，也需要确认进程已消失
             if task.process_pid and _is_pid_alive(task.process_pid):
@@ -1014,6 +1105,10 @@ class TaskManager:
             task.event_count = task.event_count
             task.current_stage = "completed"
             self._update_task_status(task, TaskStatus.COMPLETED, result=result)
+
+            # V1.4: 生成 trace.json（source of truth）
+            self._generate_trace_json(task, task_dir)
+
             logger.info(
                 "[Task] ✓ completed: %s 企业: %s 风险等级=%s 耗时=%ss",
                 task_id, task.company_id,
@@ -1023,13 +1118,14 @@ class TaskManager:
 
         except CompanyNotFoundError as exc:
             watchdog_cancelled.set()
-            _pid_detected.set() if '_pid_detected' in dir() else None
             self.terminate_harness_process(task, reason="company_not_found")
-            self._update_task_status(
-                task,
-                TaskStatus.FAILED,
-                error=f"企业不存在: {exc.company_id}",
-            )
+            # V1.5: 检查是否已被取消
+            if not cancel_event.is_set():
+                self._update_task_status(
+                    task,
+                    TaskStatus.FAILED,
+                    error=f"企业不存在: {exc.company_id}",
+                )
             logger.error(
                 "[Task] ✗ failed (company not found): %s 企业: %s",
                 task_id, task.company_id,
@@ -1037,29 +1133,38 @@ class TaskManager:
 
         except HarnessError as exc:
             watchdog_cancelled.set()
-            _pid_detected.set() if '_pid_detected' in dir() else None
             self.terminate_harness_process(task, reason="harness_error")
-            self._update_task_status(
-                task,
-                TaskStatus.FAILED,
-                error=f"Harness 分析失败: {exc}",
-            )
-            logger.error("[Task] ✗ failed (harness error): %s %s", task_id, exc)
+            # V1.5: 被取消的 HarnessError 不标记为 failed
+            if cancel_event.is_set():
+                logger.info(
+                    "[Task] HarnessError after cancel (ignored): %s %s", task_id, exc
+                )
+            else:
+                self._update_task_status(
+                    task,
+                    TaskStatus.FAILED,
+                    error=f"Harness 分析失败: {exc}",
+                )
+                logger.error("[Task] ✗ failed (harness error): %s %s", task_id, exc)
 
         except Exception as exc:
             watchdog_cancelled.set()
-            _pid_detected.set() if '_pid_detected' in dir() else None
             self.terminate_harness_process(task, reason="task_exception")
-            self._update_task_status(
-                task,
-                TaskStatus.FAILED,
-                error=f"分析过程异常: {exc}",
-            )
+            # V1.5: 检查是否已被取消
+            if not cancel_event.is_set():
+                self._update_task_status(
+                    task,
+                    TaskStatus.FAILED,
+                    error=f"分析过程异常: {exc}",
+                )
             logger.exception("[Task] ✗ failed (exception): %s %s", task_id, exc)
 
         finally:
             # 确保 watchdog 被取消
             watchdog_cancelled.set()
+
+            # V1.5: 清理 cancel_event
+            self._cancel_events.pop(task_id, None)
 
             # 确保进程已清理（双重保险）
             if task.process_pid and task.process_alive:
@@ -1089,3 +1194,47 @@ class TaskManager:
         except OSError:
             pass
         return events
+
+    def _generate_trace_json(self, task: TaskInfo, task_dir: Path) -> None:
+        """任务 completed 后生成 trace.json（结构化调查轨迹）。
+
+        从 session_events.jsonl 读取 raw events，调用 trace parser 生成结构化 trace，
+        保存到 task 目录作为历史访问的 source of truth。
+        """
+        try:
+            from .trace_service import parse_trace_events
+
+            raw_events = self._load_raw_events_from_task_dir(task_dir)
+            if not raw_events:
+                logger.warning(
+                    "[Task] trace.json 生成跳过：无 raw events task=%s",
+                    task.task_id,
+                )
+                return
+
+            trace_events = parse_trace_events(raw_events, task_status=task.status.value)
+
+            trace_data = {
+                "task_id": task.task_id,
+                "company_id": task.company_id,
+                "task_status": task.status.value,
+                "event_count": len(trace_events),
+                "events": trace_events,
+            }
+
+            trace_file = task_dir / "trace.json"
+            trace_file.write_text(
+                json.dumps(trace_data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+            logger.info(
+                "[Task] trace.json generated: task=%s events=%d",
+                task.task_id, len(trace_events),
+            )
+        except Exception as exc:
+            # trace.json 生成失败不阻断主流程
+            logger.warning(
+                "[Task] trace.json 生成失败（非致命）: task=%s error=%s",
+                task.task_id, exc,
+            )

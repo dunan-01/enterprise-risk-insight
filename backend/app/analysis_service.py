@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -33,6 +35,11 @@ logger = logging.getLogger("risk-api")
 # ------------------------------------------------------------
 
 RUNS_WEB_ROOT = PROJECT_ROOT / "runs" / "web"
+
+
+def _now_iso() -> str:
+    """返回当前 UTC 时间的 ISO 8601 字符串。"""
+    return datetime.now(timezone.utc).isoformat()
 
 # ------------------------------------------------------------
 # best-effort 结构化解析正则
@@ -184,48 +191,121 @@ def _extract_related_companies(report: str, target: str) -> List[str]:
 
 
 def _save_run_records(
-    company_id: str, harness_result: Dict[str, Any], response: Dict[str, Any]
+    company_id: str,
+    harness_result: Dict[str, Any],
+    response: Dict[str, Any],
+    task_id: Optional[str] = None,
+    task_dir: Optional[Path] = None,
 ) -> Optional[Path]:
     """
-    将一次分析的运行记录保存到 runs/web/<company_id>/：
+    将一次分析的运行记录保存到 task 目录（source of truth）+ company-level（latest 兼容）。
 
-    - analysis_result.json ：最终结构化结果（report_path 与 API 响应一致）
-    - session_events.jsonl ：raw_events 完整事件流（每行一个 JSON）
-    - process.md           ：分析过程文本
-    - report_final.md      ：最终报告（仅当报告非空）
+    保存顺序：
+    1. task 目录（runs/web/tasks/<task_id>/）—— 永久保留，不覆盖历史
+    2. company-level（runs/web/<company_id>/）—— latest 兼容，可被下一次覆盖
+    3. latest.json 指针 —— 指向最新 completed task
 
-    注意：先计算 report_path 并回填 response["report_path"]，
-    再序列化 analysis_result.json —— 保证落盘 JSON 与 API 响应字段一致。
+    文件清单：
+    - task.json（已有，由 task_manager 维护）
+    - session_events.jsonl（已有，由 harness_adapter 流式写入）
+    - trace.json（由 trace parser 生成）
+    - analysis_result.json
+    - process.md
+    - report_final.md
 
     返回报告文件路径（报告为空时返回 None）。
     """
+    report = (harness_result.get("report") or "").strip()
+    report_path: Optional[Path] = None
+
+    # ============================================================
+    # 1. 保存到 task 目录（source of truth）
+    # ============================================================
+    if task_dir is not None:
+        task_dir.mkdir(parents=True, exist_ok=True)
+
+        # report_final.md
+        if report:
+            report_path = task_dir / "report_final.md"
+            report_path.write_text(report, encoding="utf-8")
+            response["report_path"] = str(report_path.relative_to(PROJECT_ROOT))
+        else:
+            response["report_path"] = None
+            logger.warning("报告为空，跳过 task report_final.md: %s", task_id)
+
+        # analysis_result.json（包含 task_id）
+        if task_id:
+            response["task_id"] = task_id
+        (task_dir / "analysis_result.json").write_text(
+            json.dumps(response, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # process.md
+        process_text = (harness_result.get("process_text") or "").strip()
+        (task_dir / "process.md").write_text(process_text, encoding="utf-8")
+
+        # session_events.jsonl（流式写入已有，此处兜底完整写入）
+        events_file = task_dir / "session_events.jsonl"
+        if not events_file.exists() or events_file.stat().st_size == 0:
+            with events_file.open("w", encoding="utf-8") as fh:
+                for ev in harness_result.get("raw_events", []):
+                    fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
+
+        # trace.json（由 task_manager 在 completed 后生成，此处预留逻辑）
+        # 实际生成在 task_manager._run_task_background completed 分支中
+
+        logger.info(
+            "[RunRecords] saved to task dir: %s files=%s",
+            task_id,
+            [f.name for f in task_dir.iterdir() if f.is_file()],
+        )
+
+    # ============================================================
+    # 2. 同步到 company-level（latest compatibility）
+    # ============================================================
     run_dir = RUNS_WEB_ROOT / company_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. 先落盘 report_final.md 并回填 response["report_path"]
-    report = (harness_result.get("report") or "").strip()
-    report_path: Optional[Path] = None
+    # report_final.md（company-level）
     if report:
-        report_path = run_dir / "report_final.md"
-        report_path.write_text(report, encoding="utf-8")
-        response["report_path"] = str(report_path.relative_to(PROJECT_ROOT))
-    else:
-        response["report_path"] = None
-        logger.warning("报告为空，跳过 report_final.md: %s", company_id)
+        company_report_path = run_dir / "report_final.md"
+        company_report_path.write_text(report, encoding="utf-8")
+        if response.get("report_path") is None:
+            response["report_path"] = str(company_report_path.relative_to(PROJECT_ROOT))
 
-    # 2. 再序列化 analysis_result.json（此时 report_path 已就绪）
+    # analysis_result.json（company-level，包含 task_id）
     (run_dir / "analysis_result.json").write_text(
         json.dumps(response, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    # 3. 其余记录文件
+    # session_events.jsonl（company-level，覆盖为最新）
     with (run_dir / "session_events.jsonl").open("w", encoding="utf-8") as fh:
         for ev in harness_result.get("raw_events", []):
             fh.write(json.dumps(ev, ensure_ascii=False) + "\n")
 
+    # process.md（company-level）
     process_text = (harness_result.get("process_text") or "").strip()
     (run_dir / "process.md").write_text(process_text, encoding="utf-8")
+
+    # ============================================================
+    # 3. latest.json 指针
+    # ============================================================
+    if task_id:
+        latest_pointer = {
+            "company_id": company_id,
+            "latest_completed_task_id": task_id,
+            "updated_at": _now_iso(),
+        }
+        (run_dir / "latest.json").write_text(
+            json.dumps(latest_pointer, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        logger.info(
+            "[RunRecords] latest.json updated: company=%s task_id=%s",
+            company_id, task_id,
+        )
 
     return report_path
 
@@ -247,18 +327,62 @@ def load_latest_analysis(company_id: str) -> Dict[str, Any]:
     """
     读取指定企业最近一次 Web 分析结果。
 
-    从 runs/web/<company_id>/analysis_result.json 加载，
-    如果 report_final.md 存在且 analysis_result.json 中 report 为空，
-    则从 report_final.md 补充加载报告正文。
+    读取路径优先级：
+    1. runs/web/<company_id>/latest.json → 获取 latest_completed_task_id
+    2. runs/web/tasks/<task_id>/analysis_result.json（source of truth）
+    3. fallback: runs/web/<company_id>/analysis_result.json（company-level 兼容）
 
-    返回响应 dict（与 POST /api/analysis 响应结构一致）。
+    返回响应 dict（与 POST /api/analysis 响应结构一致，包含 task_id）。
 
     异常：
         AnalysisNotFoundError —— 历史分析结果不存在
     """
     cid = company_id.strip().upper()
+    company_dir = RUNS_WEB_ROOT / cid
 
-    result_path = RUNS_WEB_ROOT / cid / "analysis_result.json"
+    # 1. 尝试通过 latest.json 找到最新 completed task
+    latest_json = company_dir / "latest.json"
+    latest_task_id: Optional[str] = None
+    if latest_json.exists():
+        try:
+            latest_data = json.loads(latest_json.read_text(encoding="utf-8"))
+            latest_task_id = latest_data.get("latest_completed_task_id")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # 2. 如果有 latest_task_id，从 task 目录读取
+    if latest_task_id:
+        task_result_path = RUNS_WEB_ROOT / "tasks" / latest_task_id / "analysis_result.json"
+        if task_result_path.exists():
+            try:
+                raw = task_result_path.read_text(encoding="utf-8")
+                result = json.loads(raw)
+                # 确保 task_id 存在
+                if "task_id" not in result:
+                    result["task_id"] = latest_task_id
+                # 补充 report（如果为空）
+                report = result.get("report") or ""
+                if not report.strip():
+                    task_report = RUNS_WEB_ROOT / "tasks" / latest_task_id / "report_final.md"
+                    if task_report.exists():
+                        try:
+                            report = task_report.read_text(encoding="utf-8")
+                            result["report"] = report
+                        except OSError:
+                            pass
+                if report.strip():
+                    logger.info(
+                        "加载 latest task 分析结果: %s task_id=%s risk=%s status=%s",
+                        cid, latest_task_id,
+                        result.get("risk_level"),
+                        result.get("verification_status"),
+                    )
+                    return result
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("读取 task analysis_result.json 失败: %s", exc)
+
+    # 3. fallback: company-level analysis_result.json
+    result_path = company_dir / "analysis_result.json"
     if not result_path.exists():
         raise AnalysisNotFoundError(cid)
 
@@ -272,7 +396,7 @@ def load_latest_analysis(company_id: str) -> Dict[str, Any]:
     # 如果 report 为空但 report_final.md 存在，从文件补充
     report = result.get("report") or ""
     if not report.strip():
-        report_path = RUNS_WEB_ROOT / cid / "report_final.md"
+        report_path = company_dir / "report_final.md"
         if report_path.exists():
             try:
                 report = report_path.read_text(encoding="utf-8")
@@ -285,13 +409,53 @@ def load_latest_analysis(company_id: str) -> Dict[str, Any]:
         logger.warning("企业 %s 的分析结果中 report 为空", cid)
         raise AnalysisNotFoundError(cid)
 
+    # 如果 task_id 不存在，尝试从 tasks 目录中查找匹配的任务
+    if "task_id" not in result or result.get("task_id") is None:
+        result["task_id"] = _find_task_id_for_company(cid)
+
     logger.info(
-        "加载已有分析结果: %s risk=%s status=%s",
+        "加载已有分析结果(fallback company-level): %s risk=%s status=%s task_id=%s",
         cid,
         result.get("risk_level"),
         result.get("verification_status"),
+        result.get("task_id"),
     )
     return result
+
+
+def _find_task_id_for_company(company_id: str) -> Optional[str]:
+    """从 tasks 目录中查找指定企业的最新 completed 任务 ID。"""
+    tasks_dir = RUNS_WEB_ROOT / "tasks"
+    if not tasks_dir.exists():
+        return None
+
+    candidates: List[Tuple[str, str]] = []  # (created_at, task_id)
+
+    for task_dir in tasks_dir.iterdir():
+        if not task_dir.is_dir():
+            continue
+        task_file = task_dir / "task.json"
+        if not task_file.exists():
+            continue
+        try:
+            task_data = json.loads(task_file.read_text(encoding="utf-8"))
+            if (
+                task_data.get("company_id") == company_id
+                and task_data.get("status") == "completed"
+            ):
+                candidates.append((
+                    task_data.get("created_at", ""),
+                    task_data.get("task_id", task_dir.name),
+                ))
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    if not candidates:
+        return None
+
+    # 按创建时间降序排序，返回最新的
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    return candidates[0][1]
 
 
 # ------------------------------------------------------------
@@ -303,6 +467,9 @@ def analyze_company(
     company_id: str,
     task_dir: Optional[Path] = None,
     on_event: Optional[Callable[[Dict[str, Any], int], None]] = None,
+    task_id: Optional[str] = None,
+    cancelled_event: Optional["threading.Event"] = None,
+    on_process_start: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
     对指定企业执行一次完整风险分析（同步阻塞，实测耗时 3-20 分钟；
@@ -314,9 +481,16 @@ def analyze_company(
             提供时 session_events.jsonl 和 stderr.log 写入该目录。
         on_event: 实时事件回调（V1.3 新增），可选。
             每收到一个有效 JSONL event 就调用 on_event(event_dict, event_count)。
+        task_id: 任务ID（V1.4 新增），可选。
+            提供时 analysis_result.json 保存到 task 目录并包含 task_id。
+        cancelled_event: 取消信号事件（V1.5 新增），可选。
+            被 set() 时终止当前分析且不重试。
+        on_process_start: subprocess 启动回调（V1.5 新增），可选。
+            调用 on_process_start(pid, pgid) 通知调用方进程已启动。
 
     返回响应 dict：
         {
+            "task_id": Optional[str],      # V1.4 新增
             "company_id": str,
             "status": "completed",
             "report": str,
@@ -325,7 +499,7 @@ def analyze_company(
             "summary": Optional[str],
             "evidence_ids": List[str],
             "related_companies": List[str],
-            "report_path": Optional[str],   # 相对项目根路径 runs/web/<id>/report_final.md
+            "report_path": Optional[str],   # 相对项目根路径
             "duration_seconds": float,
         }
 
@@ -340,17 +514,20 @@ def analyze_company(
         raise CompanyNotFoundError(cid)
 
     # 2. 调用真实 Risk Harness（opencode headless）
-    logger.info("[Analyze] before run_harness_analysis company_id=%s", cid)
+    logger.info("[Analyze] before run_harness_analysis company_id=%s task_id=%s", cid, task_id)
     harness_result = run_harness_analysis(
         cid,
         task_dir=task_dir,
         on_event=on_event,
+        cancelled_event=cancelled_event,
+        on_process_start=on_process_start,
     )
     logger.info("[Analyze] run_harness_analysis returned company_id=%s status=%s", cid, harness_result.get("verification_status"))
 
     # 3. best-effort 结构化解析
     report = (harness_result.get("report") or "").strip()
     response: Dict[str, Any] = {
+        "task_id": task_id,
         "company_id": cid,
         "status": "completed",
         "report": report,
@@ -363,12 +540,13 @@ def analyze_company(
         "duration_seconds": harness_result.get("duration_seconds", 0.0),
     }
 
-    # 4. 保存运行记录（内部会回填 response["report_path"]）
-    _save_run_records(cid, harness_result, response)
+    # 4. 保存运行记录（task 目录 + company-level + latest.json）
+    _save_run_records(cid, harness_result, response, task_id=task_id, task_dir=task_dir)
 
     logger.info(
-        "分析完成: %s status=%s risk=%s evidence=%d related=%d 耗时=%ss",
+        "分析完成: %s task_id=%s status=%s risk=%s evidence=%d related=%d 耗时=%ss",
         cid,
+        task_id,
         response["verification_status"],
         response["risk_level"],
         len(response["evidence_ids"]),

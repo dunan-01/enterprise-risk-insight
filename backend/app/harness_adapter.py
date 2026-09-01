@@ -235,6 +235,8 @@ def run_harness_analysis(
     timeout_seconds: Optional[int] = None,
     task_dir: Optional[Path] = None,
     on_event: Optional[Callable[[Dict[str, Any], int], None]] = None,
+    cancelled_event: Optional[threading.Event] = None,
+    on_process_start: Optional[Callable[[int, int], None]] = None,
 ) -> Dict[str, Any]:
     """
     调用 Risk Harness 对指定企业完成一次完整风险分析（同步阻塞）。
@@ -248,6 +250,8 @@ def run_harness_analysis(
             客户端/HTTP 超时建议设置 ≥ 20 分钟。
         task_dir: per-task 输出目录，可选。提供时将 session_events.jsonl 和 stderr.log 写入该目录。
         on_event: 实时事件回调，可选。每收到一个有效 JSONL event 就调用 on_event(event_dict, event_count)。
+        cancelled_event: 取消信号事件，可选。被 set() 时终止当前分析且不重试。
+        on_process_start: subprocess 启动回调，可选。调用 on_process_start(pid, pgid) 通知调用方进程已启动。
 
     返回结构化结果：
         {
@@ -314,6 +318,13 @@ def run_harness_analysis(
                     start_new_session=True,  # 独立进程组，便于超时后整体清理
                 )
                 logger.info("[Harness] subprocess started pid=%s company=%s", proc.pid, cid)
+
+                # 通知调用方进程已启动（PID/PGID）
+                if on_process_start:
+                    try:
+                        on_process_start(proc.pid, proc.pid)  # start_new_session=True → PGID = PID
+                    except Exception as cb_err:
+                        logger.warning("[Harness] on_process_start 回调异常: %s", cb_err)
 
                 # --------------------------------------------------------
                 # 流式 stdout / stderr 消费（V1.3 改造）
@@ -401,6 +412,12 @@ def run_harness_analysis(
                     except (ProcessLookupError, PermissionError):
                         proc.kill()
                     proc.wait()
+                    # V1.5: 超时后检查是否已被用户取消
+                    if cancelled_event and cancelled_event.is_set():
+                        logger.info("[Harness] 超时但已取消，不重试: %s", cid)
+                        raise HarnessError(
+                            f"Harness 分析被取消（超时检测时发现取消信号）：{cid}"
+                        ) from None
                     if attempts < MAX_ATTEMPTS:
                         logger.warning(
                             "第 %d 次尝试超时（%ss），%ss 后重试: %s",
@@ -425,6 +442,13 @@ def run_harness_analysis(
                 "[Harness] subprocess exited pid=%s return_code=%s company=%s",
                 proc.pid, proc.returncode, cid,
             )
+
+            # V1.5: 进程退出后检查是否已被用户取消（SIGTERM = -15 或被 kill）
+            if cancelled_event and cancelled_event.is_set():
+                logger.info("[Harness] 进程退出但已取消，不重试: %s", cid)
+                raise HarnessError(
+                    f"Harness 分析被取消：{cid}"
+                ) from None
 
             stderr_text = "\n".join(stderr_lines).strip()
             if stderr_text:
@@ -461,6 +485,13 @@ def run_harness_analysis(
                     f"Harness 分析完成但未输出 VERIFICATION_STATUS"
                     f"（尝试 {attempts} 次）：{cid}。stderr: {detail[:300]}"
                 )
+
+            # V1.5: 重试前检查是否已被用户取消
+            if cancelled_event and cancelled_event.is_set():
+                logger.info("[Harness] 无验证状态但已取消，不重试: %s", cid)
+                raise HarnessError(
+                    f"Harness 分析被取消：{cid}"
+                ) from None
 
             logger.warning(
                 "[Harness] 未提取到 VERIFICATION_STATUS，%ss 后重试", RETRY_SLEEP_SECONDS

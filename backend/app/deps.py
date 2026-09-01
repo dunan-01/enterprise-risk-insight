@@ -30,6 +30,7 @@ from risk_tools import (  # noqa: E402
     get_company_profile,
     get_company_relations,
     get_company_snapshot,
+    get_evidence_by_id,
     get_judicial_events,
     search_company,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "get_judicial_events",
     "get_company_relations",
     "get_company_snapshot",
+    "get_evidence_by_id",
     "normalize_company_id",
     "company_exists",
     "error_detail",
@@ -61,6 +63,9 @@ ERROR_INVALID_REQUEST = "INVALID_REQUEST"
 ERROR_ANALYSIS_NOT_FOUND = "ANALYSIS_NOT_FOUND"
 ERROR_TASK_NOT_FOUND = "TASK_NOT_FOUND"
 ERROR_TASK_CONFLICT = "TASK_CONFLICT"  # 已有活跃任务
+ERROR_EVIDENCE_NOT_FOUND = "EVIDENCE_NOT_FOUND"
+ERROR_TASK_ALREADY_COMPLETED = "TASK_ALREADY_COMPLETED"
+ERROR_TASK_ALREADY_FINISHED = "TASK_ALREADY_FINISHED"
 
 
 def error_detail(code: str, message: str) -> Dict[str, str]:

@@ -275,6 +275,173 @@ def get_company_relations(company_id: str) -> List[Dict[str, Any]]:
 
 
 # ============================================================
+# Tool 6：根据 Evidence ID 查询原始事实（V1.4 新增）
+# ============================================================
+
+def get_business_event_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Bxxx）查询 business_events 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("B"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT be.*, c.company_name
+            FROM business_events AS be
+            JOIN companies AS c ON be.company_id = c.company_id
+            WHERE be.event_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def get_judicial_event_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Jxxx）查询 judicial_events 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("J"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT je.*, c.company_name
+            FROM judicial_events AS je
+            JOIN companies AS c ON je.company_id = c.company_id
+            WHERE je.event_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def get_relation_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Rxxx）查询 relations 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("R"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT
+                r.*,
+                cf.company_name AS from_company_name,
+                ct.company_name AS to_company_name
+            FROM relations AS r
+            JOIN companies AS cf ON r.from_company_id = cf.company_id
+            JOIN companies AS ct ON r.to_company_id = ct.company_id
+            WHERE r.relation_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def get_evidence_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 Evidence ID 查询确定性原始事实。
+
+    支持三类 Evidence：
+    - Bxxx → business_events（工商/经营事件）
+    - Jxxx → judicial_events（司法事件）
+    - Rxxx → relations（企业关系）
+
+    返回统一外层结构：
+    {
+        "evidence_id": "J008",
+        "evidence_type": "judicial",
+        "company_id": "C007",
+        "company_name": "xxx",
+        "data": { ... 原始记录 ... },
+        "source": "simulated"
+    }
+
+    如果 Evidence 不存在，返回 None。
+
+    注意：本函数只做确定性数据库查询，
+    不计算风险分数、不判断风险等级、不调用 LLM。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id:
+        return None
+
+    prefix = evidence_id[:1] if evidence_id else ""
+
+    if prefix == "B":
+        row = get_business_event_by_id(evidence_id)
+        if row is None:
+            return None
+        company_name = row.pop("company_name", None)
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "business",
+            "company_id": row.get("company_id"),
+            "company_name": company_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    elif prefix == "J":
+        row = get_judicial_event_by_id(evidence_id)
+        if row is None:
+            return None
+        company_name = row.pop("company_name", None)
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "judicial",
+            "company_id": row.get("company_id"),
+            "company_name": company_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    elif prefix == "R":
+        row = get_relation_by_id(evidence_id)
+        if row is None:
+            return None
+        from_name = row.pop("from_company_name", None)
+        to_name = row.pop("to_company_name", None)
+        # 关系记录没有单一 company_id，用 from 作为主企业
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "relation",
+            "company_id": row.get("from_company_id"),
+            "company_name": from_name,
+            "from_company_id": row.get("from_company_id"),
+            "from_company_name": from_name,
+            "to_company_id": row.get("to_company_id"),
+            "to_company_name": to_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    return None
+
+
+# ============================================================
 # 辅助 Tool：一次获取企业自身全部信息
 # ============================================================
 

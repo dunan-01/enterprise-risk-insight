@@ -237,6 +237,7 @@ class AnalysisRequest(BaseModel):
 class AnalysisResponse(BaseModel):
     """POST /api/analysis 响应。"""
 
+    task_id: Optional[str] = Field(None, description="任务唯一ID（V1.4 新增）")
     company_id: str = Field(..., description="企业唯一ID")
     status: str = Field("completed", description="分析状态（恒为 completed，Harness 已结束）")
     report: str = Field("", description="最终企业风险调查报告全文")
@@ -359,3 +360,115 @@ class SystemStatusResponse(BaseModel):
     harness_process_alive: bool = Field(False, description="是否有 harness 进程存活")
     pid: Optional[int] = Field(None, description="当前活跃进程 PID")
     project_root: str = Field(..., description="项目根目录")
+
+
+# ============================================================
+# Evidence Detail 模型（V1.4 新增）
+# ============================================================
+
+
+class EvidenceResponse(BaseModel):
+    """Evidence 详情响应。
+
+    返回确定性数据库事实，不包含模型判断。
+    V2.0: 新增 title 和 description 字段，来自 Evidence Registry。
+    """
+
+    evidence_id: str = Field(..., description="证据编号（Bxxx/Jxxx/Rxxx）")
+    evidence_type: str = Field(..., description="证据类型: business / judicial / relation")
+    company_id: Optional[str] = Field(None, description="所属企业ID")
+    company_name: Optional[str] = Field(None, description="所属企业名称")
+    title: Optional[str] = Field(None, description="证据标题（人类可读）")
+    description: Optional[str] = Field(None, description="证据描述")
+    from_company_id: Optional[str] = Field(None, description="关系主体企业ID（仅 relation）")
+    from_company_name: Optional[str] = Field(None, description="关系主体企业名称（仅 relation）")
+    to_company_id: Optional[str] = Field(None, description="关系客体企业ID（仅 relation）")
+    to_company_name: Optional[str] = Field(None, description="关系客体企业名称（仅 relation）")
+    data: dict = Field(..., description="原始记录数据")
+    source: Optional[str] = Field(None, description="数据来源: simulated / real")
+
+
+# ============================================================
+# V1.6 Investigation Network 模型
+# ============================================================
+
+
+class InvestigationNode(BaseModel):
+    """调查网络节点：在关系网络节点基础上叠加调查状态。"""
+
+    company_id: str = Field(..., description="企业唯一ID")
+    company_name: str = Field(..., description="企业名称")
+    industry: Optional[str] = Field(None, description="所属行业")
+    business_status: Optional[str] = Field(None, description="经营状态")
+    depth: int = Field(0, description="距离目标企业的深度（0=目标企业自身）")
+    is_root: bool = Field(False, description="是否为目标企业")
+    investigation_status: str = Field(
+        ...,
+        description="调查状态: root / investigated / discovered / not_investigated",
+    )
+    investigation_order: Optional[int] = Field(
+        None, description="调查顺序（仅 investigated 状态有值）"
+    )
+    first_investigated_at: Optional[str] = Field(
+        None, description="首次被调查的时间（ISO 8601）"
+    )
+    evidence_ids: List[str] = Field(
+        default_factory=list, description="关联的证据编号列表"
+    )
+    evidence_count: int = Field(0, description="关联证据数量")
+    supplementary: bool = Field(
+        False, description="是否为 coverage auditor 补充调查的企业"
+    )
+    risk_level: Optional[str] = Field(None, description="风险等级（如：高风险、中等风险、低风险）")
+    risk_tags: List[str] = Field(
+        default_factory=list, description="关键风险标签（如：诉讼案件、被执行人、股权冻结）"
+    )
+
+
+class InvestigationEdge(BaseModel):
+    """调查网络边：在关系网络边基础上叠加调查状态。"""
+
+    relation_id: str = Field(..., description="关系唯一ID")
+    source: str = Field(..., description="关系主体企业ID")
+    target: str = Field(..., description="关系客体企业ID")
+    relation_type: str = Field(..., description="关系类型")
+    equity_ratio: Optional[float] = Field(None, description="股权比例（0-1 小数）")
+    amount: Optional[float] = Field(None, description="涉及金额（元）")
+    status: Optional[str] = Field(None, description="关系状态")
+    investigation_status: str = Field(
+        ..., description="调查状态: traversed / discovered / not_used"
+    )
+    first_used_at: Optional[str] = Field(
+        None, description="首次被遍历的时间（ISO 8601）"
+    )
+    supplementary: bool = Field(
+        False, description="是否涉及 coverage 补充企业"
+    )
+    evidence_referenced: bool = Field(
+        False, description="该边的遍历是否引用了证据"
+    )
+    investigation_reason: Optional[str] = Field(
+        None, description="调查原因说明"
+    )
+
+
+class InvestigationNetworkStats(BaseModel):
+    """调查网络统计数据。"""
+
+    total_network_nodes: int = Field(..., description="网络总节点数")
+    investigated_nodes: int = Field(..., description="已调查节点数（含 root）")
+    discovered_nodes: int = Field(..., description="已发现但未调查的节点数")
+    uninvestigated_nodes: int = Field(..., description="未调查的节点数")
+    investigated_edges: int = Field(..., description="已遍历的边数")
+    total_evidence: int = Field(..., description="总证据数")
+
+
+class InvestigationNetworkResponse(BaseModel):
+    """调查网络响应（V1.6）。"""
+
+    task_id: Optional[str] = Field(None, description="任务唯一ID（历史分析可能为 None）")
+    company_id: str = Field(..., description="目标企业ID")
+    task_status: str = Field(..., description="任务状态")
+    nodes: List[InvestigationNode] = Field(..., description="网络节点列表")
+    edges: List[InvestigationEdge] = Field(..., description="网络边列表")
+    stats: InvestigationNetworkStats = Field(..., description="统计数据")

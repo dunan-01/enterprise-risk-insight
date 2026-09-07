@@ -1,0 +1,110 @@
+{
+  "task_id": "task-8da49536-1788158045",
+  "company_id": "C010",
+  "task_status": "cancelled",
+  "event_count": 7,
+  "events": [
+    {
+      "event_id": "trace_5c3d3110",
+      "sequence": 1,
+      "timestamp": "2026-08-31T06:34:28.733981+00:00",
+      "type": "analysis_started",
+      "agent": "risk-orchestrator",
+      "title": "开始企业风险调查",
+      "description": "AI 风险调查流程已启动",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_62c14a49",
+      "sequence": 2,
+      "timestamp": "2026-08-31T06:34:19.277000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "搜索企业",
+      "description": "关键词：C010",
+      "company_id": "C010",
+      "company_name": "",
+      "tool": "risk_search_company",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e1f33973",
+      "sequence": 3,
+      "timestamp": "2026-08-31T06:34:19.277000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C010",
+      "company_id": "C010",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_69381142",
+      "sequence": 4,
+      "timestamp": "2026-08-31T06:34:23.289000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_da2aecbf",
+      "sequence": 5,
+      "timestamp": "2026-08-31T06:34:25.036000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B016"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_98da577e",
+      "sequence": 6,
+      "timestamp": "2026-08-31T06:34:27.560000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J014"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_f1c0adf6",
+      "sequence": 7,
+      "timestamp": "2026-08-31T06:34:28.734184+00:00",
+      "type": "analysis_cancelled",
+      "agent": "risk-orchestrator",
+      "title": "分析已取消",
+      "description": "用户主动终止本次企业风险调查",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    }
+  ]
+}

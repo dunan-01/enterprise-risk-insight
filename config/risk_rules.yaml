@@ -1,0 +1,315 @@
+# ============================================================
+# Risk Rule Engine 配置文件
+# 
+# 将"风险事实发现"（AI Agent）与"风险等级认定"（Rule Engine）解耦。
+# AI Agent 负责发现事实并绑定 Evidence ID；
+# 本配置驱动的 Rule Engine 负责确定性评分和等级认定。
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. 风险等级定义（分数区间为闭区间）
+# ------------------------------------------------------------
+risk_levels:
+  - level: "低风险"
+    min_score: 0
+    max_score: 25
+  - level: "中风险"
+    min_score: 26
+    max_score: 50
+  - level: "中高风险"
+    min_score: 51
+    max_score: 75
+  - level: "高风险"
+    min_score: 76
+    max_score: 999
+
+# ------------------------------------------------------------
+# 2. 维度权重（用于维度得分计算）
+#    dimension_score = (weight / total_weight) * risk_score
+#    所有权重之和不必为 1.0，引擎会自动归一化。
+# ------------------------------------------------------------
+dimension_weights:
+  business: 20          # 工商/经营维度
+  judicial: 30          # 司法维度（权重最高：最直接的风险信号）
+  relationship: 20      # 关联关系维度
+  public_opinion: 15    # 舆情维度
+  financial: 10         # 财务维度
+  recruitment: 5        # 招聘维度（弱信号）
+
+# ------------------------------------------------------------
+# 3. 风险规则库
+#
+# 每条规则包含：
+#   - id:            唯一规则ID
+#   - dimension:     所属维度（business/judicial/relationship/public_opinion/financial/recruitment）
+#   - name:          风险事项名称（人类可读）
+#   - condition:     匹配条件（Python 表达式，上下文为 evidence_data + extra）
+#   - score:         基础分值（正整数，越大越严重）
+#   - severity:      严重程度（critical/high/medium/low），仅作标注
+#   - evidence_types: 该规则可匹配的 Evidence 前缀（B/J/R/P/F/H）
+#   - description:   风险解释模板（用于报告输出）
+#
+# 注意：
+#   - 同一 Evidence 不得被同一规则重复计分（引擎去重）
+#   - condition 中可引用 evidence_data（dict）和 extra（dict）
+#   - extra 由引擎注入，包含 financial_indicators 等预计算指标
+# ------------------------------------------------------------
+rules:
+  # ========== 司法维度 ==========
+  - id: J001
+    dimension: judicial
+    name: 失信被执行人
+    condition: "evidence_data.get('case_type') == '失信被执行人'"
+    score: 30
+    severity: critical
+    evidence_types: ["J"]
+    description: "企业被列为失信被执行人，存在严重信用违约风险。"
+
+  - id: J002
+    dimension: judicial
+    name: 被执行人（非失信）
+    condition: "evidence_data.get('case_type') == '被执行人' and evidence_data.get('case_type') != '失信被执行人'"
+    score: 20
+    severity: high
+    evidence_types: ["J"]
+    description: "企业存在被执行记录，需关注执行情况。"
+
+  - id: J003
+    dimension: judicial
+    name: 限制消费令
+    condition: "evidence_data.get('case_type') == '限制消费令'"
+    score: 25
+    severity: high
+    evidence_types: ["J"]
+    description: "企业或其法定代表人被限制消费，流动性风险信号。"
+
+  - id: J004
+    dimension: judicial
+    name: 股权冻结
+    condition: "evidence_data.get('case_type') == '股权冻结'"
+    score: 25
+    severity: high
+    evidence_types: ["J"]
+    description: "企业股权被冻结，影响控制权稳定性和融资能力。"
+
+  - id: J005
+    dimension: judicial
+    name: 企业作为被告的诉讼
+    condition: "evidence_data.get('case_type') in ('裁判文书', '开庭公告') and evidence_data.get('role') == '被告'"
+    score: 10
+    severity: medium
+    evidence_types: ["J"]
+    description: "企业作为被告涉及诉讼，存在潜在法律风险。"
+
+  - id: J006
+    dimension: judicial
+    name: 大额诉讼（涉案金额超500万）
+    condition: "evidence_data.get('amount') is not None and evidence_data.get('amount', 0) >= 5000000"
+    score: 15
+    severity: high
+    evidence_types: ["J"]
+    description: "涉案金额较大（≥500万元），财务影响显著。"
+
+  - id: J007
+    dimension: judicial
+    name: 破产案件
+    condition: "evidence_data.get('case_type') == '破产案件'"
+    score: 35
+    severity: critical
+    evidence_types: ["J"]
+    description: "企业涉及破产程序，存在重大经营风险。"
+
+  # ========== 工商/经营维度 ==========
+  - id: B001
+    dimension: business
+    name: 经营异常
+    condition: "evidence_data.get('event_type') == '经营异常'"
+    score: 20
+    severity: high
+    evidence_types: ["B"]
+    description: "企业被列入经营异常名录，经营合规性存在风险。"
+
+  - id: B002
+    dimension: business
+    name: 行政处罚
+    condition: "evidence_data.get('event_type') == '行政处罚'"
+    score: 15
+    severity: medium
+    evidence_types: ["B"]
+    description: "企业受到行政处罚，合规风险信号。"
+
+  - id: B003
+    dimension: business
+    name: 大额行政处罚（超50万）
+    condition: "evidence_data.get('event_type') == '行政处罚' and evidence_data.get('penalty_amount') is not None and evidence_data.get('penalty_amount', 0) >= 500000"
+    score: 25
+    severity: high
+    evidence_types: ["B"]
+    description: "大额行政处罚（≥50万元），合规和财务影响显著。"
+
+  - id: B004
+    dimension: business
+    name: 吊销营业执照
+    condition: "evidence_data.get('event_type') == '吊销'"
+    score: 35
+    severity: critical
+    evidence_types: ["B"]
+    description: "企业营业执照被吊销，丧失经营资格。"
+
+  # ========== 关联关系维度 ==========
+  - id: R001
+    dimension: relationship
+    name: 大额对外担保
+    condition: "evidence_data.get('relation_type') == '担保' and evidence_data.get('amount') is not None and evidence_data.get('amount', 0) >= 10000000"
+    score: 20
+    severity: high
+    evidence_types: ["R"]
+    description: "存在大额对外担保（≥1000万元），或有负债风险显著。"
+
+  - id: R002
+    dimension: relationship
+    name: 对外担保（一般金额）
+    condition: "evidence_data.get('relation_type') == '担保' and (evidence_data.get('amount') is None or evidence_data.get('amount', 0) < 10000000)"
+    score: 10
+    severity: medium
+    evidence_types: ["R"]
+    description: "存在对外担保，需关注被担保方信用状况。"
+
+  - id: R003
+    dimension: relationship
+    name: "DEPRECATED: 关联企业存在高风险（V2.2 已废弃）"
+    condition: "False"
+    score: 0
+    severity: low
+    evidence_types: ["R"]
+    description: "此规则已废弃。V2.2 通过 Evidence Provenance 和 Relationship Risk Exposure 替代。"
+
+  # ========== 舆情维度 ==========
+  - id: P001
+    dimension: public_opinion
+    name: 已核实负面舆情
+    condition: "evidence_data.get('sentiment') == 'negative' and evidence_data.get('verification_status') == 'verified'"
+    score: 15
+    severity: high
+    evidence_types: ["P"]
+    description: "已核实的负面舆情事件，对企业声誉和经营存在实质影响。"
+
+  - id: P002
+    dimension: public_opinion
+    name: 未经核实负面舆情
+    condition: "evidence_data.get('sentiment') == 'negative' and evidence_data.get('verification_status') != 'verified'"
+    score: 5
+    severity: low
+    evidence_types: ["P"]
+    description: "未经核实的负面舆情，需持续关注但当前影响有限。"
+
+  # ========== 财务维度 ==========
+  - id: F001
+    dimension: financial
+    name: 资产负债率过高（>70%）
+    condition: "extra.get('debt_ratio') is not None and extra.get('debt_ratio', 0) > 0.70"
+    score: 15
+    severity: high
+    evidence_types: ["F"]
+    description: "资产负债率超过70%，偿债压力较大。"
+
+  - id: F002
+    dimension: financial
+    name: 资产负债率极高（>90%）
+    condition: "extra.get('debt_ratio') is not None and extra.get('debt_ratio', 0) > 0.90"
+    score: 25
+    severity: critical
+    evidence_types: ["F"]
+    description: "资产负债率超过90%，濒临资不抵债。"
+
+  - id: F003
+    dimension: financial
+    name: 持续亏损（净利润连续为负）
+    condition: "extra.get('consecutive_loss_years', 0) >= 2"
+    score: 20
+    severity: high
+    evidence_types: ["F"]
+    description: "企业连续亏损（≥2年），持续经营能力存疑。"
+
+  - id: F004
+    dimension: financial
+    name: 经营现金流为负
+    condition: "extra.get('latest_operating_cash_flow') is not None and extra.get('latest_operating_cash_flow', 0) < 0"
+    score: 10
+    severity: medium
+    evidence_types: ["F"]
+    description: "最近一期经营现金流为负，造血能力不足。"
+
+  - id: F005
+    dimension: financial
+    name: 审计意见异常
+    # V2.3A.1: 使用 canonical English values 判断，不再依赖中文字符串匹配
+    # unqualified = 正常（不触发）; qualified/adverse/disclaimer = 异常（触发）
+    condition: "evidence_data.get('audit_opinion') is not None and evidence_data.get('audit_opinion') not in ('unqualified', '')"
+    score: 20
+    severity: high
+    evidence_types: ["F"]
+    max_hits: 2
+    description: "审计意见非标准无保留意见，财务报告可靠性存疑。"
+
+  - id: F006
+    dimension: financial
+    name: 营收大幅下滑（同比下降>30%）
+    condition: "extra.get('revenue_yoy') is not None and extra.get('revenue_yoy', 0) < -0.30"
+    score: 15
+    severity: high
+    evidence_types: ["F"]
+    description: "营业收入同比下滑超过30%，经营规模急剧萎缩。"
+
+  # ========== 招聘维度 ==========
+  - id: H001
+    dimension: recruitment
+    name: 无招聘信息（可能经营停滞）
+    condition: "extra.get('recruitment_count', 0) == 0"
+    score: 5
+    severity: low
+    evidence_types: ["H"]
+    description: "无公开招聘记录，可能经营收缩或停滞。"
+
+  - id: H002
+    dimension: recruitment
+    name: 招聘规模异常收缩
+    condition: "extra.get('recruitment_count', 0) > 0 and extra.get('recruitment_count', 0) <= 2"
+    score: 3
+    severity: low
+    evidence_types: ["H"]
+    description: "招聘规模极小（≤2条），可能处于经营收缩期。"
+
+# ------------------------------------------------------------
+# 4. 硬规则（强制提升风险等级）
+#
+# 硬规则在常规评分之后执行。
+# 如果 condition 为 True，则强制将风险等级提升到 force_level。
+# 用于处理极端情况（如：刑事犯罪、资不抵债等），
+# 确保这些情况不会被"平均分"稀释。
+#
+# 注意：
+#   - hard_rule 会覆盖 Rule Engine 根据分数计算的等级
+#   - 多条硬规则同时命中时，取最严重的等级
+#   - hard_rule 也会被记录到 triggered_rules 中，确保可追溯
+# ------------------------------------------------------------
+hard_rules:
+  - id: HR001
+    condition: "extra.get('has_bankruptcy_case', False)"
+    force_level: "高风险"
+    reason: "企业涉及破产案件，强制认定为高风险"
+
+  - id: HR002
+    condition: "extra.get('has_dishonest_execution', False)"
+    force_level: "高风险"
+    reason: "企业被列为失信被执行人，强制认定为高风险"
+
+  - id: HR003
+    condition: "extra.get('business_status') in ('吊销', '注销')"
+    force_level: "高风险"
+    reason: "企业营业执照已被吊销或注销，强制认定为高风险"
+
+  - id: HR004
+    condition: "extra.get('debt_ratio') is not None and extra.get('debt_ratio', 0) > 0.95"
+    force_level: "高风险"
+    reason: "资产负债率超过95%，濒临资不抵债，强制认定为高风险"

@@ -1767,6 +1767,33 @@ table.data-table {
   background: #a5f3fc;
 }
 
+.ev-badge-opinion {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.ev-badge-opinion:hover {
+  background: #fde68a;
+}
+
+.ev-badge-financial {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.ev-badge-financial:hover {
+  background: #a7f3d0;
+}
+
+.ev-badge-recruitment {
+  color: #1d4ed8;
+  background: #e0e7ff;
+}
+
+.ev-badge-recruitment:hover {
+  background: #c7d2fe;
+}
+
 /* ============================================================
    Investigation Network Legend（V1.6）
    ============================================================ */

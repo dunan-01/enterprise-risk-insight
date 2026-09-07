@@ -24,7 +24,7 @@ export function VerificationBadge({ raw, big }: { raw: string | null; big?: bool
   return <Tag tone={verificationTone(raw)} big={big} />
 }
 
-/** 证据编号徽标（B 工商 / J 司法 / R 关系，按前缀着色） */
+/** 证据编号徽标（B 工商 / J 司法 / R 关系 / P 舆情 / F 财务 / H 招聘，按前缀着色） */
 export function EvidenceTag({ id, onClick }: { id: string; onClick?: (id: string) => void }) {
   const tone = evidenceTone(id)
   const prefix = id.slice(0, 1).toUpperCase()
@@ -38,7 +38,7 @@ export function EvidenceTag({ id, onClick }: { id: string; onClick?: (id: string
       <span className="ev-prefix">{prefix}</span>
       {id.slice(1)}
       <span style={{ fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
-        {prefix === 'B' ? '工商' : prefix === 'J' ? '司法' : prefix === 'R' ? '关系' : ''}
+        {prefix === 'B' ? '工商' : prefix === 'J' ? '司法' : prefix === 'R' ? '关系' : prefix === 'P' ? '舆情' : prefix === 'F' ? '财务' : prefix === 'H' ? '招聘' : ''}
       </span>
     </span>
   )

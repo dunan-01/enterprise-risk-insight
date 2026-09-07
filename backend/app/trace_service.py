@@ -51,8 +51,8 @@ TOOL_ACTION_VERBS: Dict[str, str] = {
     "risk_search_company": "搜索",
 }
 
-# Evidence ID 匹配模式（Bxxx / Jxxx / Rxxx）
-EVIDENCE_ID_PATTERN = re.compile(r"\b([BJR]\d{3})\b")
+# Evidence ID 匹配模式（六源：Bxxx / Jxxx / Rxxx / Pxxx / Fxxx / Hxxx）
+EVIDENCE_ID_PATTERN = re.compile(r"\b([BJRPFH]\d{3})\b")
 
 # 覆盖性审核状态模式
 COVERAGE_STATUS_PATTERN = re.compile(r"COVERAGE_STATUS:\s*(\w+)")

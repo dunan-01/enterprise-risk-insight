@@ -3,7 +3,7 @@
 
 职责：
 - 将项目 src/ 目录加入 sys.path，以便复用 src/risk_tools.py 的查询函数；
-- 集中 re-export risk_tools 的 6 个查询函数（API 层唯一的数据访问入口，不写 SQL）；
+- 集中 re-export risk_tools 的 9 个查询函数（API 层唯一的数据访问入口，不写 SQL）；
 - 提供 company_id 规范化、企业存在性检查、统一错误码构造等通用工具。
 """
 
@@ -31,7 +31,10 @@ from risk_tools import (  # noqa: E402
     get_company_relations,
     get_company_snapshot,
     get_evidence_by_id,
+    get_financial_reports,
     get_judicial_events,
+    get_public_opinion_events,
+    get_recruitment_events,
     search_company,
 )
 
@@ -46,6 +49,9 @@ __all__ = [
     "get_company_relations",
     "get_company_snapshot",
     "get_evidence_by_id",
+    "get_public_opinion_events",
+    "get_financial_reports",
+    "get_recruitment_events",
     "normalize_company_id",
     "company_exists",
     "error_detail",

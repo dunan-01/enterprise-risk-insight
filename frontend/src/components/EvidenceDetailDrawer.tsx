@@ -7,7 +7,7 @@ import type { EvidenceResponse } from '../api/types'
  * Evidence Detail Drawer（V1.4）。
  *
  * 右侧抽屉组件，展示确定性数据库事实。
- * 支持 Bxxx（工商）/ Jxxx（司法）/ Rxxx（关系）三类 Evidence。
+ * 支持六源 Evidence：Bxxx（工商）/ Jxxx（司法）/ Rxxx（关系）/ Pxxx（舆情）/ Fxxx（财务）/ Hxxx（招聘）。
  *
  * 设计原则：
  * - 只展示数据库原始事实，不包含模型判断
@@ -110,6 +110,61 @@ function RelationEvidence({ data }: { data: Record<string, any> }) {
   )
 }
 
+function PublicOpinionEvidence({ data }: { data: Record<string, any> }) {
+  return (
+    <>
+      <Row label="舆情标题">{data.title}</Row>
+      <Row label="发布日期">{fmtDate(data.publish_date)}</Row>
+      <Row label="主题">{data.topic}</Row>
+      <Row label="情感倾向">{data.sentiment}</Row>
+      <Row label="媒体类型">{data.source_type}</Row>
+      <Row label="来源">{data.source_name}</Row>
+      <Row label="摘要">{data.summary}</Row>
+      <Row label="核实状态">{data.verification_status}</Row>
+      <Row label="企业回应">{data.response_status}</Row>
+    </>
+  )
+}
+
+function FinancialEvidence({ data }: { data: Record<string, any> }) {
+  return (
+    <>
+      <Row label="报告期">{data.period}</Row>
+      <Row label="报告日期">{fmtDate(data.report_date)}</Row>
+      <Row label="营业收入">{data.revenue != null ? fmtMoney(data.revenue) : null}</Row>
+      <Row label="净利润">{data.net_profit != null ? fmtMoney(data.net_profit) : null}</Row>
+      <Row label="总资产">{data.total_assets != null ? fmtMoney(data.total_assets) : null}</Row>
+      <Row label="总负债">{data.total_liabilities != null ? fmtMoney(data.total_liabilities) : null}</Row>
+      <Row label="流动资产">{data.current_assets != null ? fmtMoney(data.current_assets) : null}</Row>
+      <Row label="流动负债">{data.current_liabilities != null ? fmtMoney(data.current_liabilities) : null}</Row>
+      <Row label="经营现金流">{data.operating_cash_flow != null ? fmtMoney(data.operating_cash_flow) : null}</Row>
+      <Row label="应收账款">{data.accounts_receivable != null ? fmtMoney(data.accounts_receivable) : null}</Row>
+      <Row label="资产负债率">{data.debt_ratio != null ? `${(data.debt_ratio * 100).toFixed(1)}%` : null}</Row>
+      <Row label="流动比率">{data.current_ratio != null ? data.current_ratio.toFixed(2) : null}</Row>
+      <Row label="净利率">{data.net_margin != null ? `${(data.net_margin * 100).toFixed(1)}%` : null}</Row>
+      <Row label="审计意见">{data.audit_opinion}</Row>
+      <Row label="币种">{data.currency}</Row>
+    </>
+  )
+}
+
+function RecruitmentEvidence({ data }: { data: Record<string, any> }) {
+  return (
+    <>
+      <Row label="发布日期">{fmtDate(data.publish_date)}</Row>
+      <Row label="招聘类型">{data.event_type}</Row>
+      <Row label="岗位类别">{data.position_category}</Row>
+      <Row label="岗位名称">{data.position_name}</Row>
+      <Row label="计划人数">{data.planned_headcount}</Row>
+      <Row label="最低薪资">{data.salary_min != null ? `¥${(data.salary_min / 1000).toFixed(0)}K` : null}</Row>
+      <Row label="最高薪资">{data.salary_max != null ? `¥${(data.salary_max / 1000).toFixed(0)}K` : null}</Row>
+      <Row label="工作地点">{data.location}</Row>
+      <Row label="状态">{data.status}</Row>
+      <Row label="说明">{data.description}</Row>
+    </>
+  )
+}
+
 // ------------------------------------------------------------
 // 主组件
 // ------------------------------------------------------------
@@ -172,14 +227,35 @@ export default function EvidenceDetailDrawer({
 
   if (!evidenceId) return null
 
-  const typeLabel = evidence?.evidence_type === 'business' ? '工商事件'
-    : evidence?.evidence_type === 'judicial' ? '司法事件'
-    : evidence?.evidence_type === 'relation' ? '企业关系'
-    : '证据'
+  const typeLabel =
+    evidence?.evidence_type === 'business'
+      ? '工商事件'
+      : evidence?.evidence_type === 'judicial'
+        ? '司法事件'
+        : evidence?.evidence_type === 'relation'
+          ? '企业关系'
+          : evidence?.evidence_type === 'public_opinion'
+            ? '舆情事件'
+            : evidence?.evidence_type === 'financial'
+              ? '财务报告'
+              : evidence?.evidence_type === 'recruitment'
+                ? '招聘信息'
+                : '证据'
 
-  const typeColor = evidence?.evidence_type === 'business' ? '#2563eb'
-    : evidence?.evidence_type === 'judicial' ? '#7c3aed'
-    : '#0891b2'
+  const typeColor =
+    evidence?.evidence_type === 'business'
+      ? '#2563eb'
+      : evidence?.evidence_type === 'judicial'
+        ? '#7c3aed'
+        : evidence?.evidence_type === 'relation'
+          ? '#0891b2'
+          : evidence?.evidence_type === 'public_opinion'
+            ? '#f59e0b'
+            : evidence?.evidence_type === 'financial'
+              ? '#10b981'
+              : evidence?.evidence_type === 'recruitment'
+                ? '#6366f1'
+                : '#6b7280'
 
   return (
     <>
@@ -271,6 +347,15 @@ export default function EvidenceDetailDrawer({
                   {evidence.evidence_type === 'business' && <BusinessEvidence data={evidence.data} />}
                   {evidence.evidence_type === 'judicial' && <JudicialEvidence data={evidence.data} />}
                   {evidence.evidence_type === 'relation' && <RelationEvidence data={evidence.data} />}
+                  {evidence.evidence_type === 'public_opinion' && (
+                    <PublicOpinionEvidence data={evidence.data} />
+                  )}
+                  {evidence.evidence_type === 'financial' && (
+                    <FinancialEvidence data={evidence.data} />
+                  )}
+                  {evidence.evidence_type === 'recruitment' && (
+                    <RecruitmentEvidence data={evidence.data} />
+                  )}
                 </div>
               </div>
 

@@ -8,35 +8,42 @@ import EvidenceDetailDrawer from './EvidenceDetailDrawer'
  * 支持表格、标题、列表、代码块等 GFM 语法。
  *
  * V2.0：修复 Evidence ID 点击不一致问题。
- * 支持所有格式的 Evidence ID（Bxxx/Jxxx/Rxxx）。
+ * 支持所有格式的 Evidence ID（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）。
  */
 
 // ------------------------------------------------------------
-// Evidence ID 正则：匹配所有格式
+// Evidence ID 正则：匹配所有格式（六源：B 工商 / J 司法 / R 关系 / P 舆情 / F 财务 / H 招聘）
 // 格式1: B009
 // 格式2: (B009)
 // 格式3: （B009）
 // 格式4: **B009**
 // 格式5: [B009]
 // 格式6: J008/J009/J010/J011（斜杠分隔的多个 ID）
+// 格式7: F019/F020/F021、P017、H015（六源 ID 同样支持斜杠分隔合并）
 // ------------------------------------------------------------
 
 // 匹配单个 Evidence ID（带可选括号或加粗标记）
-const EVIDENCE_ID_PATTERN = /[\(（]?\*{0,2}([BJR]\d{3})\*{0,2}[\)）]?/g
+const EVIDENCE_ID_PATTERN = /[\(（]?\*{0,2}([BJRPFH]\d{3})\*{0,2}[\)）]?/g
 
 // 检测证据类型颜色
 function getBadgeClass(id: string): string {
-  const prefix = id.charAt(0)
+  const prefix = id.charAt(0).toUpperCase()
   if (prefix === 'B') return 'ev-badge ev-badge-business'
   if (prefix === 'J') return 'ev-badge ev-badge-judicial'
+  if (prefix === 'P') return 'ev-badge ev-badge-opinion'
+  if (prefix === 'F') return 'ev-badge ev-badge-financial'
+  if (prefix === 'H') return 'ev-badge ev-badge-recruitment'
   return 'ev-badge ev-badge-relation'
 }
 
 // 检测证据类型标签
 function getTypeLabel(id: string): string {
-  const prefix = id.charAt(0)
+  const prefix = id.charAt(0).toUpperCase()
   if (prefix === 'B') return '工商'
   if (prefix === 'J') return '司法'
+  if (prefix === 'P') return '舆情'
+  if (prefix === 'F') return '财务'
+  if (prefix === 'H') return '招聘'
   return '关系'
 }
 
@@ -65,13 +72,14 @@ function createEvidenceBadge(
 
 /**
  * 检测文本中的 Evidence ID，替换为可点击的 Badge。
- * 支持所有格式：
+ * 支持所有格式（六源 B/J/R/P/F/H）：
  * - B009
  * - (B009)
  * - （B009）
  * - **B009**
  * - [B009]
  * - J008/J009/J010/J011
+ * - F019/F020/F021、P017、H015
  */
 function renderWithEvidenceIds(
   text: string,

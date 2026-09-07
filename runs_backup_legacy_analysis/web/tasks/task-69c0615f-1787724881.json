@@ -1,0 +1,10 @@
+{
+  "task_id": "task-69c0615f-1787724881",
+  "company_id": "C004",
+  "status": "failed",
+  "created_at": "2026-08-26T06:14:41.427120+00:00",
+  "started_at": null,
+  "finished_at": "2026-08-26T06:17:55.101261+00:00",
+  "error": "服务重启，未完成的任务已终止",
+  "result": null
+}

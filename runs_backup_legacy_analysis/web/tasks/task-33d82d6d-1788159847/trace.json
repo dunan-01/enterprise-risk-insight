@@ -1,0 +1,234 @@
+{
+  "task_id": "task-33d82d6d-1788159847",
+  "company_id": "C010",
+  "task_status": "cancelled",
+  "event_count": 15,
+  "events": [
+    {
+      "event_id": "trace_90c9df95",
+      "sequence": 1,
+      "timestamp": "2026-08-31T07:04:39.516426+00:00",
+      "type": "analysis_started",
+      "agent": "risk-orchestrator",
+      "title": "开始企业风险调查",
+      "description": "AI 风险调查流程已启动",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_37d11324",
+      "sequence": 2,
+      "timestamp": "2026-08-31T07:04:19.860000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "搜索企业",
+      "description": "关键词：C010",
+      "company_id": "C010",
+      "company_name": "",
+      "tool": "risk_search_company",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_3ab8cf22",
+      "sequence": 3,
+      "timestamp": "2026-08-31T07:04:19.860000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C010",
+      "company_id": "C010",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_311db028",
+      "sequence": 4,
+      "timestamp": "2026-08-31T07:04:23.821000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_d01fdf2d",
+      "sequence": 5,
+      "timestamp": "2026-08-31T07:04:24.060000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B016"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_3350dba7",
+      "sequence": 6,
+      "timestamp": "2026-08-31T07:04:24.386000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J014"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_bdf2318a",
+      "sequence": 7,
+      "timestamp": "2026-08-31T07:04:24.607000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "宏泰物流有限公司（C010）",
+      "company_id": "C010",
+      "company_name": "宏泰物流有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R004"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_4ba329be",
+      "sequence": 8,
+      "timestamp": "2026-08-31T07:04:24.607000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C002",
+      "company_id": "C002",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_bbb0be9b",
+      "sequence": 9,
+      "timestamp": "2026-08-31T07:04:31.498000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "远海供应链管理有限公司（C002）",
+      "company_id": "C002",
+      "company_name": "远海供应链管理有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e233992a",
+      "sequence": 10,
+      "timestamp": "2026-08-31T07:04:31.732000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "远海供应链管理有限公司（C002）",
+      "company_id": "C002",
+      "company_name": "远海供应链管理有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B004",
+        "B003"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_643d8876",
+      "sequence": 11,
+      "timestamp": "2026-08-31T07:04:32.066000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "远海供应链管理有限公司（C002）",
+      "company_id": "C002",
+      "company_name": "远海供应链管理有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J002",
+        "J001",
+        "J003"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_00d6e995",
+      "sequence": 12,
+      "timestamp": "2026-08-31T07:04:32.148000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "远海供应链管理有限公司（C002）",
+      "company_id": "C002",
+      "company_name": "远海供应链管理有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R001",
+        "R004"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_49b46fda",
+      "sequence": 13,
+      "timestamp": "2026-08-31T07:04:32.148000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C001",
+      "company_id": "C001",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_bcf026f4",
+      "sequence": 14,
+      "timestamp": "2026-08-31T07:04:38.978000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "华辰智能科技有限公司（C001）",
+      "company_id": "C001",
+      "company_name": "华辰智能科技有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e0a8553a",
+      "sequence": 15,
+      "timestamp": "2026-08-31T07:04:39.517042+00:00",
+      "type": "analysis_cancelled",
+      "agent": "risk-orchestrator",
+      "title": "分析已取消",
+      "description": "用户主动终止本次企业风险调查",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    }
+  ]
+}

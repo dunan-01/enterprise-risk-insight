@@ -117,6 +117,9 @@ export function evidenceTone(id: string): Tone {
   if (prefix === 'B') return { className: 'tone-brand', label: `${id} 工商` }
   if (prefix === 'J') return { className: 'tone-high', label: `${id} 司法` }
   if (prefix === 'R') return { className: 'tone-purple', label: `${id} 关系` }
+  if (prefix === 'P') return { className: 'tone-mid', label: `${id} 舆情` }
+  if (prefix === 'F') return { className: 'tone-low', label: `${id} 财务` }
+  if (prefix === 'H') return { className: 'tone-cyan', label: `${id} 招聘` }
   return { className: 'tone-muted', label: id }
 }
 

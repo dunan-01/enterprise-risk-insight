@@ -1,0 +1,18 @@
+{
+  "task_id": "task-19593b37-1788156771",
+  "company_id": "C010",
+  "status": "failed",
+  "created_at": "2026-08-31T06:12:51.104946+00:00",
+  "started_at": "2026-08-31T06:12:51.105417+00:00",
+  "finished_at": "2026-08-31T06:15:06.940306+00:00",
+  "error": "Harness 分析失败: Harness 分析完成但未输出 VERIFICATION_STATUS（尝试 2 次）：C010。stderr: 进程正常结束但无有效输出",
+  "result": null,
+  "event_count": 3,
+  "last_event_at": "2026-08-31T06:15:05.862701+00:00",
+  "current_stage": "investigation",
+  "process_pid": 17963,
+  "process_pgid": 17963,
+  "process_alive": false,
+  "cancel_reason": "replaced_by_new_analysis",
+  "replacement_task_id": null
+}

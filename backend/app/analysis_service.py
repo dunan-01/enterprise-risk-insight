@@ -26,6 +26,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import deps
 from .deps import PROJECT_ROOT, company_exists
 from .harness_adapter import CompanyNotFoundError, run_harness_analysis
+from .risk_rule_engine import evaluate_risk, build_related_company_profiles, get_engine
+from .report_postprocessor import inject_risk_level_into_report
 
 logger = logging.getLogger("risk-api")
 
@@ -64,8 +66,8 @@ SUMMARY_PATTERN = re.compile(
     r"(?:五、风险总结|##\s*五|###\s*5\.\d?\s*风险总结)[\s\S]*?(?=##\s*六|关键证据索引|$)"
 )
 
-# 关键证据编号：Bxxx / Jxxx / Rxxx
-EVIDENCE_ID_PATTERN = re.compile(r"\b([BJR]\d{3})\b")
+# 关键证据编号：Bxxx / Jxxx / Rxxx / Pxxx / Fxxx / Hxxx
+EVIDENCE_ID_PATTERN = re.compile(r"\b([BJRPFH]\d{3})\b")
 
 # 关联企业ID：Cxxx（负向后顾排除 SYN-C001 之类的信用代码片段误匹配）
 COMPANY_ID_PATTERN = re.compile(r"(?<![A-Za-z0-9-])(C\d{3})\b")
@@ -215,7 +217,8 @@ def _save_run_records(
 
     返回报告文件路径（报告为空时返回 None）。
     """
-    report = (harness_result.get("report") or "").strip()
+    # V2.1 FIX: 使用 response["report"]（已含 Rule Engine 注入）而非 harness 原始 report
+    report = (response.get("report") or "").strip()
     report_path: Optional[Path] = None
 
     # ============================================================
@@ -459,6 +462,223 @@ def _find_task_id_for_company(company_id: str) -> Optional[str]:
 
 
 # ------------------------------------------------------------
+# Risk Rule Engine 集成（V2.1 新增）
+# ------------------------------------------------------------
+
+
+def _format_risk_scoring(result: Dict[str, Any], related_profiles: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """将 Rule Engine 结果格式化为 API 响应字段（V2.3B.1: 含 RelatedCompanyRiskProfile）。
+
+    参数：
+        result: RiskRuleEngine.evaluate() 的返回值。
+        related_profiles: 关联企业 Risk Profile 列表（V2.3B.1 新增）。
+
+    返回：
+        格式化的 risk_scoring dict。
+    """
+    # V2.1 兼容字段
+    base = {
+        "risk_score": result["risk_score"],
+        "risk_level": result["risk_level"],
+        "triggered_rules": [
+            {
+                "rule_id": r["rule_id"],
+                "rule_name": r["rule_name"],
+                "dimension": r["dimension"],
+                "evidence_id": r["evidence_id"],
+                "score": r["score"],
+                "severity": r["severity"],
+                "description": r["description"],
+                # V2.2: provenance 信息
+                "is_target_company": r.get("is_target_company", True),
+                "owner_company_id": r.get("owner_company_id", ""),
+                "relation_depth": r.get("relation_depth", 0),
+            }
+            for r in result["triggered_rules"]
+        ],
+        "hard_rule_hits": result["hard_rule_hits"],
+        "dimension_scores": result["dimension_scores"],
+        "evidence_ids": result["evidence_ids"],
+        "total_evidence_count": result["total_evidence_count"],
+    }
+
+    # V2.2 新增：分离结构
+    if "own_risk" in result:
+        base["own_risk"] = result["own_risk"]
+
+    # V2.3B.1: relationship_exposure 改为 NOT_CALIBRATED + profiles
+    base["relationship_exposure"] = {
+        "status": "NOT_CALIBRATED",
+        "score": None,
+        "level": None,
+        "related_company_profiles": related_profiles or [],
+    }
+
+    if "comprehensive_risk" in result:
+        base["comprehensive_risk"] = result["comprehensive_risk"]
+
+    return base
+
+
+# ------------------------------------------------------------
+# Report Post-Processing: 确定性注入风险等级（V2.1 新增）
+# 已迁移至 report_postprocessor.py（独立模块，便于测试）
+# ------------------------------------------------------------
+
+
+def _build_rule_engine_input(
+    company_id: str,
+    evidence_ids: List[str],
+    related_companies: List[str],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """构建 Risk Rule Engine 所需的输入数据（V2.2: 含 evidence provenance）。
+
+    参数：
+        company_id: 目标企业ID。
+        evidence_ids: 报告中提取的 Evidence ID 列表。
+        related_companies: 报告中提到的关联企业ID列表。
+
+    返回：
+        (evidence_facts, extra)
+        - evidence_facts: 从数据库查询的原始事实列表（含 provenance 字段）。
+        - extra: 预计算的上下文指标。
+    """
+    evidence_facts: List[Dict[str, Any]] = []
+
+    # 逐个查询 Evidence 原始数据
+    for eid in evidence_ids:
+        ev = deps.get_evidence_by_id(eid)
+        if ev is not None:
+            evidence_facts.append({
+                "evidence_id": eid,
+                "evidence_type": ev.get("evidence_type", ""),
+                "data": ev.get("data", {}),
+                "company_id": ev.get("company_id"),
+            })
+
+    # V2.2: 计算 evidence provenance（归属来源）
+    try:
+        # 获取所有关系数据（需要全量关系图来计算最短路径）
+        all_relations: List[Dict[str, Any]] = []
+        # 收集所有涉及的公司 ID
+        all_company_ids = {company_id}
+        for eid in evidence_ids:
+            ev = deps.get_evidence_by_id(eid)
+            if ev and ev.get("company_id"):
+                all_company_ids.add(ev["company_id"])
+        for rc in related_companies:
+            all_company_ids.add(rc)
+
+        # 查询所有涉及公司的直接关系
+        seen_relation_ids: Set[str] = set()
+        for cid in all_company_ids:
+            try:
+                rels = deps.get_company_relations(cid)
+                for r in rels:
+                    rid = r.get("relation_id", "")
+                    if rid and rid not in seen_relation_ids:
+                        seen_relation_ids.add(rid)
+                        all_relations.append(r)
+            except Exception:
+                pass
+
+        # 计算 provenance
+        from app.risk_rule_engine import compute_provenance
+        evidence_facts = compute_provenance(evidence_facts, company_id, all_relations)
+
+        logger.info(
+            "[RuleEngine] Provenance 计算完成: %s total=%d own=%d related=%d",
+            company_id,
+            len(evidence_facts),
+            sum(1 for f in evidence_facts if f.get("is_target_company")),
+            sum(1 for f in evidence_facts if not f.get("is_target_company")),
+        )
+    except Exception as exc:
+        logger.warning("[RuleEngine] Provenance 计算失败（回退到无 provenance 模式）: %s", exc)
+        # 回退：所有 evidence 视为目标企业自身
+        for f in evidence_facts:
+            f.setdefault("is_target_company", True)
+            f.setdefault("owner_company_id", f.get("company_id", ""))
+            f.setdefault("target_company_id", company_id)
+            f.setdefault("relation_depth", 0)
+            f.setdefault("relation_path", [company_id])
+            f.setdefault("relation_ids", [])
+            f.setdefault("relation_types", [])
+            f.setdefault("target_role_in_relation", None)
+
+    # 构建 extra 上下文
+    extra: Dict[str, Any] = {}
+
+    # 企业基本信息
+    profile = deps.get_company_profile(company_id)
+    if profile:
+        extra["business_status"] = profile.get("business_status", "")
+
+    # 财务指标（取最新一期）
+    try:
+        financial_reports = deps.get_financial_reports(company_id)
+        if financial_reports:
+            latest = financial_reports[-1]
+            extra["debt_ratio"] = latest.get("debt_ratio")
+            extra["latest_operating_cash_flow"] = latest.get("operating_cash_flow")
+            extra["revenue_yoy"] = latest.get("revenue_yoy")
+            extra["profit_yoy"] = latest.get("profit_yoy")
+
+            # 计算连续亏损年数
+            consecutive_loss = 0
+            for report in reversed(financial_reports):
+                net_profit = report.get("net_profit")
+                if net_profit is not None and net_profit < 0:
+                    consecutive_loss += 1
+                else:
+                    break
+            extra["consecutive_loss_years"] = consecutive_loss
+    except Exception as exc:
+        logger.warning("[RuleEngine] 获取财务数据失败: %s", exc)
+
+    # 招聘事件数量
+    try:
+        recruitment = deps.get_recruitment_events(company_id)
+        extra["recruitment_count"] = len(recruitment)
+    except Exception as exc:
+        logger.warning("[RuleEngine] 获取招聘数据失败: %s", exc)
+
+    # 司法事件标志（从数据库查询，仅目标企业自身）
+    try:
+        judicial_events = deps.get_judicial_events(company_id)
+        extra["has_bankruptcy_case"] = any(
+            je.get("case_type") == "破产案件" for je in judicial_events
+        )
+        extra["has_dishonest_execution"] = any(
+            je.get("case_type") == "失信被执行人" for je in judicial_events
+        )
+    except Exception as exc:
+        logger.warning("[RuleEngine] 获取司法数据失败: %s", exc)
+
+    # V2.2: 关联企业风险等级通过 provenance 传递，不再需要 extra 注入
+    # R003 已标记 DEPRECATED
+
+    return evidence_facts, extra
+
+
+def _get_all_relations(company_ids: List[str]) -> List[Dict[str, Any]]:
+    """获取所有涉及公司的关系数据（V2.3B.1）。"""
+    all_relations: List[Dict[str, Any]] = []
+    seen_relation_ids: Set[str] = set()
+    for cid in company_ids:
+        try:
+            rels = deps.get_company_relations(cid)
+            for r in rels:
+                rid = r.get("relation_id", "")
+                if rid and rid not in seen_relation_ids:
+                    seen_relation_ids.add(rid)
+                    all_relations.append(r)
+        except Exception:
+            pass
+    return all_relations
+
+
+# ------------------------------------------------------------
 # 服务入口
 # ------------------------------------------------------------
 
@@ -526,19 +746,97 @@ def analyze_company(
 
     # 3. best-effort 结构化解析
     report = (harness_result.get("report") or "").strip()
+    evidence_ids = _extract_evidence_ids(report)
+    related_companies = _extract_related_companies(report, cid)
+
+    # 3.5 确定性 Risk Rule Engine 评估（V2.1 新增）
+    rule_engine_result: Optional[Dict[str, Any]] = None
+    related_profiles: Optional[List[Dict[str, Any]]] = None
+    try:
+        evidence_facts, extra = _build_rule_engine_input(cid, evidence_ids, related_companies)
+        rule_engine_result = evaluate_risk(evidence_facts, extra)
+        logger.info(
+            "[RuleEngine] 风险评估完成: %s score=%s level=%s rules=%d hard=%d",
+            cid,
+            rule_engine_result.get("risk_score"),
+            rule_engine_result.get("risk_level"),
+            len(rule_engine_result.get("triggered_rules", [])),
+            len(rule_engine_result.get("hard_rule_hits", [])),
+        )
+
+        # V2.3B.1: 构建关联企业 Own Risk Profiles
+        if related_companies:
+            try:
+                engine = get_engine()
+                all_relations = _get_all_relations(related_companies + [cid])
+                related_profiles = build_related_company_profiles(
+                    target_company_id=cid,
+                    related_company_ids=related_companies,
+                    evidence_facts=evidence_facts,
+                    all_relations=all_relations,
+                    engine=engine,
+                    deps_module=deps,
+                )
+                logger.info(
+                    "[RuleEngine] 关联企业 Profile 构建完成: %s profiles=%d",
+                    cid, len(related_profiles),
+                )
+            except Exception as exc:
+                logger.warning("[RuleEngine] 关联企业 Profile 构建失败: %s", exc)
+
+    except Exception as exc:
+        logger.warning("[RuleEngine] 风险评估异常（回退到 best-effort）: %s", exc)
+
+    # 3.6 确定性注入风险等级到报告正文（V2.1 新增）
+    # 风险等级和评分的唯一 Source of Truth 是 Rule Engine，
+    # 后端进行 deterministic post-processing，不依赖 LLM 正确回填。
+    engine_risk_level = rule_engine_result["risk_level"] if rule_engine_result else None
+    engine_risk_score = rule_engine_result["risk_score"] if rule_engine_result else 0
+
+    if engine_risk_level and report:
+        report = inject_risk_level_into_report(report, engine_risk_level, engine_risk_score)
+        logger.info(
+            "[RuleEngine] 报告风险等级注入完成: %s level=%s score=%s",
+            cid, engine_risk_level, engine_risk_score,
+        )
+
     response: Dict[str, Any] = {
         "task_id": task_id,
         "company_id": cid,
         "status": "completed",
         "report": report,
         "verification_status": harness_result.get("verification_status"),
-        "risk_level": _extract_risk_level(report),
+        # V2.1: 风险等级唯一 Source of Truth = Rule Engine
+        # risk_level 镜像自 risk_scoring.level，不是独立来源
+        "risk_level": engine_risk_level or _extract_risk_level(report),
         "summary": _extract_summary(report),
-        "evidence_ids": _extract_evidence_ids(report),
-        "related_companies": _extract_related_companies(report, cid),
+        "evidence_ids": evidence_ids,
+        "related_companies": related_companies,
         "report_path": None,
         "duration_seconds": harness_result.get("duration_seconds", 0.0),
+        # V2.0: 多源数据版本标记
+        "analysis_version": "v2-rule-engine",
+        "data_sources": [
+            "business",
+            "judicial",
+            "relations",
+            "public_opinion",
+            "financial",
+            "recruitment",
+        ],
+        # V2.1: Risk Rule Engine 结果
+        "risk_scoring": _format_risk_scoring(rule_engine_result, related_profiles) if rule_engine_result else None,
     }
+
+    # V2.1 一致性校验：risk_level 必须镜像自 risk_scoring.level
+    if response.get("risk_scoring"):
+        scoring_level = response["risk_scoring"]["risk_level"]
+        if response["risk_level"] != scoring_level:
+            logger.warning(
+                "[RuleEngine] risk_level 不一致: response=%s scoring=%s，强制镜像",
+                response["risk_level"], scoring_level,
+            )
+            response["risk_level"] = scoring_level
 
     # 4. 保存运行记录（task 目录 + company-level + latest.json）
     _save_run_records(cid, harness_result, response, task_id=task_id, task_dir=task_dir)

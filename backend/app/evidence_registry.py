@@ -2,10 +2,11 @@
 企业关联风险智能洞察系统 —— Evidence Registry 服务层（V2.0）。
 
 统一证据注册中心，负责：
-1. 根据 risk.db 自动加载 business_events、judicial_events、relations
+1. 根据 risk.db 自动加载 business_events、judicial_events、relations、
+   public_opinion_events、financial_reports、recruitment_events
 2. 生成 EvidenceRecord 统一数据结构
 3. 支持 GET /api/evidence/{evidence_id} 查询
-4. 确保报告中的所有 Bxxx/Jxxx/Rxxx 全部经过 Evidence Registry
+4. 确保报告中的所有 Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx 全部经过 Evidence Registry
 
 设计原则：
 - 不修改 Risk Harness
@@ -58,13 +59,13 @@ class EvidenceRecord:
     """统一证据记录数据结构。
 
     Attributes:
-        id: 证据编号（Bxxx/Jxxx/Rxxx）
-        type: 证据类型（business/judicial/relation）
+        id: 证据编号（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）
+        type: 证据类型（business/judicial/relation/public_opinion/financial/recruitment）
         company_id: 所属企业ID
         company_name: 所属企业名称
         title: 证据标题（人类可读）
         description: 证据描述
-        source_table: 数据来源表（business_events/judicial_events/relations）
+        source_table: 数据来源表
         data: 原始记录数据
     """
 
@@ -154,6 +155,12 @@ class EvidenceRegistry:
             self._load_judicial_events(conn)
             # 加载 relations
             self._load_relations(conn)
+            # 加载 public_opinion_events
+            self._load_public_opinion_events(conn)
+            # 加载 financial_reports
+            self._load_financial_reports(conn)
+            # 加载 recruitment_events
+            self._load_recruitment_events(conn)
         finally:
             conn.close()
 
@@ -262,6 +269,102 @@ class EvidenceRegistry:
             )
             self._cache[relation_id] = record
 
+    def _load_public_opinion_events(self, conn: sqlite3.Connection) -> None:
+        """加载 public_opinion_events 表的证据记录。"""
+        rows = conn.execute(
+            """
+            SELECT pe.*, c.company_name
+            FROM public_opinion_events AS pe
+            JOIN companies AS c ON pe.company_id = c.company_id
+            ORDER BY pe.event_id
+            """
+        ).fetchall()
+
+        for row in rows:
+            data = _row_to_dict(row)
+            company_name = data.pop("company_name", "")
+            event_id = data.get("event_id", "")
+
+            # 生成标题和描述
+            title = self._generate_public_opinion_title(data)
+            description = self._generate_public_opinion_description(data)
+
+            record = EvidenceRecord(
+                id=event_id,
+                type="public_opinion",
+                company_id=data.get("company_id", ""),
+                company_name=company_name,
+                title=title,
+                description=description,
+                source_table="public_opinion_events",
+                data=data,
+            )
+            self._cache[event_id] = record
+
+    def _load_financial_reports(self, conn: sqlite3.Connection) -> None:
+        """加载 financial_reports 表的证据记录。"""
+        rows = conn.execute(
+            """
+            SELECT fr.*, c.company_name
+            FROM financial_reports AS fr
+            JOIN companies AS c ON fr.company_id = c.company_id
+            ORDER BY fr.report_id
+            """
+        ).fetchall()
+
+        for row in rows:
+            data = _row_to_dict(row)
+            company_name = data.pop("company_name", "")
+            report_id = data.get("report_id", "")
+
+            # 生成标题和描述
+            title = self._generate_financial_title(data)
+            description = self._generate_financial_description(data)
+
+            record = EvidenceRecord(
+                id=report_id,
+                type="financial",
+                company_id=data.get("company_id", ""),
+                company_name=company_name,
+                title=title,
+                description=description,
+                source_table="financial_reports",
+                data=data,
+            )
+            self._cache[report_id] = record
+
+    def _load_recruitment_events(self, conn: sqlite3.Connection) -> None:
+        """加载 recruitment_events 表的证据记录。"""
+        rows = conn.execute(
+            """
+            SELECT re.*, c.company_name
+            FROM recruitment_events AS re
+            JOIN companies AS c ON re.company_id = c.company_id
+            ORDER BY re.event_id
+            """
+        ).fetchall()
+
+        for row in rows:
+            data = _row_to_dict(row)
+            company_name = data.pop("company_name", "")
+            event_id = data.get("event_id", "")
+
+            # 生成标题和描述
+            title = self._generate_recruitment_title(data)
+            description = self._generate_recruitment_description(data)
+
+            record = EvidenceRecord(
+                id=event_id,
+                type="recruitment",
+                company_id=data.get("company_id", ""),
+                company_name=company_name,
+                title=title,
+                description=description,
+                source_table="recruitment_events",
+                data=data,
+            )
+            self._cache[event_id] = record
+
     # ------------------------------------------------------------
     # 标题和描述生成器
     # ------------------------------------------------------------
@@ -329,6 +432,66 @@ class EvidenceRegistry:
             parts.append(f"起始: {data['start_date']}")
         return "；".join(parts) if parts else data.get("relation_type", "")
 
+    def _generate_public_opinion_title(self, data: Dict[str, Any]) -> str:
+        """生成舆情事件标题。"""
+        topic = data.get("topic", "未知主题")
+        sentiment = data.get("sentiment", "")
+        if sentiment:
+            return f"{topic}（{sentiment}）"
+        return f"{topic}"
+
+    def _generate_public_opinion_description(self, data: Dict[str, Any]) -> str:
+        """生成舆情事件描述。"""
+        parts = []
+        if data.get("title"):
+            parts.append(data["title"])
+        if data.get("source_name"):
+            parts.append(f"来源: {data['source_name']}")
+        if data.get("verification_status"):
+            parts.append(f"核实状态: {data['verification_status']}")
+        return "；".join(parts) if parts else data.get("topic", "")
+
+    def _generate_financial_title(self, data: Dict[str, Any]) -> str:
+        """生成财务报告标题。"""
+        period = data.get("period", "未知期间")
+        return f"{period} 财务报告"
+
+    def _generate_financial_description(self, data: Dict[str, Any]) -> str:
+        """生成财务报告描述。"""
+        parts = []
+        revenue = data.get("revenue")
+        if revenue is not None:
+            parts.append(f"营业收入: ¥{revenue:,.0f}")
+        net_profit = data.get("net_profit")
+        if net_profit is not None:
+            parts.append(f"净利润: ¥{net_profit:,.0f}")
+        audit_opinion = data.get("audit_opinion")
+        if audit_opinion:
+            parts.append(f"审计意见: {audit_opinion}")
+        return "；".join(parts) if parts else data.get("period", "")
+
+    def _generate_recruitment_title(self, data: Dict[str, Any]) -> str:
+        """生成招聘事件标题。"""
+        event_type = data.get("event_type", "招聘")
+        position_name = data.get("position_name", "")
+        if position_name:
+            return f"{event_type}: {position_name}"
+        return f"{event_type}"
+
+    def _generate_recruitment_description(self, data: Dict[str, Any]) -> str:
+        """生成招聘事件描述。"""
+        parts = []
+        position_category = data.get("position_category")
+        if position_category:
+            parts.append(f"职位类别: {position_category}")
+        planned_headcount = data.get("planned_headcount")
+        if planned_headcount is not None:
+            parts.append(f"招聘人数: {planned_headcount}")
+        location = data.get("location")
+        if location:
+            parts.append(f"工作地点: {location}")
+        return "；".join(parts) if parts else data.get("event_type", "")
+
     # ------------------------------------------------------------
     # 公共查询接口
     # ------------------------------------------------------------
@@ -337,7 +500,7 @@ class EvidenceRegistry:
         """根据 Evidence ID 查询证据记录。
 
         Args:
-            evidence_id: 证据编号（Bxxx/Jxxx/Rxxx）
+            evidence_id: 证据编号（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）
 
         Returns:
             EvidenceRecord 或 None（不存在时）
@@ -350,7 +513,7 @@ class EvidenceRegistry:
         """根据 Evidence ID 查询证据记录（字典格式）。
 
         Args:
-            evidence_id: 证据编号（Bxxx/Jxxx/Rxxx）
+            evidence_id: 证据编号（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）
 
         Returns:
             字典格式的证据记录或 None（不存在时）
@@ -389,7 +552,7 @@ def get_evidence_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
     这是主要的查询入口，供 api.py 调用。
 
     Args:
-        evidence_id: 证据编号（Bxxx/Jxxx/Rxxx）
+        evidence_id: 证据编号（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）
 
     Returns:
         字典格式的证据记录或 None（不存在时）

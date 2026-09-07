@@ -1,0 +1,18 @@
+{
+  "task_id": "task-cbff331b-1788157922",
+  "company_id": "C010",
+  "status": "cancelled",
+  "created_at": "2026-08-31T06:32:02.449228+00:00",
+  "started_at": "2026-08-31T06:32:02.449670+00:00",
+  "finished_at": "2026-08-31T06:32:16.106777+00:00",
+  "error": null,
+  "result": null,
+  "event_count": 3,
+  "last_event_at": "2026-08-31T06:32:14.331459+00:00",
+  "current_stage": "investigation",
+  "process_pid": 22349,
+  "process_pgid": 22349,
+  "process_alive": false,
+  "cancel_reason": "user_cancelled",
+  "replacement_task_id": null
+}

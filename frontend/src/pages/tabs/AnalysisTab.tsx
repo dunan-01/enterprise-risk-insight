@@ -23,12 +23,17 @@ const PIPELINE_STEPS = [
   {
     name: '企业调查',
     module: 'risk-orchestrator',
-    desc: '收集企业基本工商信息、经营事件、司法事件与一跳关联关系，形成调查底稿。',
+    desc: '收集企业基本工商信息(B)、经营事件(B)、司法事件(J)与一跳关联关系(R)，形成调查底稿。',
+  },
+  {
+    name: '多源数据扩展',
+    module: 'risk-orchestrator',
+    desc: '查询舆情信息(P)、财务报告(F)与招聘信息(H)，获取更多异构数据维度的风险信号。',
   },
   {
     name: '覆盖审核',
     module: 'coverage-auditor',
-    desc: '对照数据清单审核调查覆盖度，确认证据是否足以支撑风险结论。',
+    desc: '对照数据清单审核调查覆盖度，确认证据是否足以支撑风险结论。B/J/R/P/F/H 六类数据源完整性检查。',
   },
   {
     name: '风险核验',
@@ -122,8 +127,9 @@ export default function AnalysisTab({
               <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" strokeLinecap="round" />
             </svg>
             <span>
-              点击下方按钮将对 <b>{companyName}（{companyId}）</b>提交一次异步 AI 风险分析任务：
-              后端 Risk Harness（risk-orchestrator 调查 → coverage-auditor 覆盖审核 → risk-verifier 核验）将在后台执行。
+              点击下方按钮将对 <b>{companyName}（{companyId}）</b>提交一次新版 AI 风险分析任务：
+              后端 Risk Harness 将基于六源数据（B 工商 / J 司法 / R 关系 / P 舆情 / F 财务 / H 招聘）
+              执行完整调查（risk-orchestrator → coverage-auditor → risk-verifier）。
               分析期间可切换其他 Tab 查看数据，页面刷新后仍会自动恢复分析状态。
             </span>
           </div>
@@ -388,18 +394,6 @@ export default function AnalysisTab({
             </div>
           </div>
 
-          {/* AI 风险摘要 */}
-          <div className="result-cell" style={{ marginTop: 14, background: '#f3f7ff', borderColor: '#c9d9f5' }}>
-            <div className="k">AI 风险摘要（summary）</div>
-            <div className="v">
-              {result.summary ? (
-                <MarkdownReport content={result.summary} />
-              ) : (
-                <span style={{ color: 'var(--text-3)' }}>后端未返回摘要文本。</span>
-              )}
-            </div>
-          </div>
-
           {/* 关联企业 + 关键证据 */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14, marginTop: 14 }}>
             <div className="result-cell">
@@ -419,7 +413,7 @@ export default function AnalysisTab({
               </div>
             </div>
             <div className="result-cell">
-              <div className="k">关键证据（evidence_ids · B 工商 / J 司法 / R 关系）</div>
+              <div className="k">关键证据（evidence_ids · B 工商 / J 司法 / R 关系 / P 舆情 / F 财务 / H 招聘）</div>
               <div className="v">
                 {result.evidence_ids.length === 0 ? (
                   <span style={{ color: 'var(--text-3)' }}>无</span>

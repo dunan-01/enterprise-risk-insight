@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -130,6 +130,82 @@ class Relation(BaseModel):
 
 
 # ============================================================
+# public_opinion_events 表相关模型
+# ============================================================
+
+
+class PublicOpinionEvent(BaseModel):
+    """企业舆情事件（public_opinion_events 表全部字段）。"""
+
+    event_id: str = Field(..., description="事件唯一ID")
+    company_id: str = Field(..., description="所属企业ID")
+    publish_date: Optional[str] = Field(None, description="发布日期")
+    topic: Optional[str] = Field(None, description="舆情主题")
+    sentiment: Optional[str] = Field(None, description="情感倾向")
+    source_type: Optional[str] = Field(None, description="来源类型")
+    source_name: Optional[str] = Field(None, description="来源名称")
+    title: Optional[str] = Field(None, description="舆情标题")
+    summary: Optional[str] = Field(None, description="舆情摘要")
+    verification_status: Optional[str] = Field(None, description="核实状态")
+    response_status: Optional[str] = Field(None, description="响应状态")
+    data_type: str = Field("simulated", description="数据来源类型")
+
+
+# ============================================================
+# financial_reports 表相关模型
+# ============================================================
+
+
+class FinancialReport(BaseModel):
+    """企业财务报告（financial_reports 表全部字段 + 计算指标）。"""
+
+    report_id: str = Field(..., description="报告唯一ID")
+    company_id: str = Field(..., description="所属企业ID")
+    period: Optional[str] = Field(None, description="报告期间")
+    report_date: Optional[str] = Field(None, description="报告日期")
+    revenue: Optional[float] = Field(None, description="营业收入（元）")
+    net_profit: Optional[float] = Field(None, description="净利润（元）")
+    total_assets: Optional[float] = Field(None, description="总资产（元）")
+    total_liabilities: Optional[float] = Field(None, description="总负债（元）")
+    current_assets: Optional[float] = Field(None, description="流动资产（元）")
+    current_liabilities: Optional[float] = Field(None, description="流动负债（元）")
+    operating_cash_flow: Optional[float] = Field(None, description="经营性现金流（元）")
+    accounts_receivable: Optional[float] = Field(None, description="应收账款（元）")
+    audit_opinion: Optional[str] = Field(None, description="审计意见")
+    currency: Optional[str] = Field(None, description="货币单位")
+    data_type: str = Field("simulated", description="数据来源类型")
+    # 计算指标
+    debt_ratio: Optional[float] = Field(None, description="资产负债率")
+    current_ratio: Optional[float] = Field(None, description="流动比率")
+    net_margin: Optional[float] = Field(None, description="净利率")
+    revenue_yoy: Optional[float] = Field(None, description="营业收入同比增长率")
+    profit_yoy: Optional[float] = Field(None, description="净利润同比增长率")
+
+
+# ============================================================
+# recruitment_events 表相关模型
+# ============================================================
+
+
+class RecruitmentEvent(BaseModel):
+    """企业招聘事件（recruitment_events 表全部字段）。"""
+
+    event_id: str = Field(..., description="事件唯一ID")
+    company_id: str = Field(..., description="所属企业ID")
+    publish_date: Optional[str] = Field(None, description="发布日期")
+    event_type: Optional[str] = Field(None, description="事件类型")
+    position_category: Optional[str] = Field(None, description="职位类别")
+    position_name: Optional[str] = Field(None, description="职位名称")
+    planned_headcount: Optional[int] = Field(None, description="计划招聘人数")
+    salary_min: Optional[float] = Field(None, description="最低薪资（元/月）")
+    salary_max: Optional[float] = Field(None, description="最高薪资（元/月）")
+    location: Optional[str] = Field(None, description="工作地点")
+    status: Optional[str] = Field(None, description="招聘状态")
+    description: Optional[str] = Field(None, description="职位描述")
+    data_type: str = Field("simulated", description="数据来源类型")
+
+
+# ============================================================
 # 响应模型
 # ============================================================
 
@@ -171,6 +247,30 @@ class RelationsResponse(BaseModel):
     company_id: str = Field(..., description="企业唯一ID")
     total: int = Field(..., description="关联关系数量")
     items: List[Relation] = Field(..., description="关联关系列表")
+
+
+class PublicOpinionEventsResponse(BaseModel):
+    """企业舆情事件响应。"""
+
+    company_id: str = Field(..., description="企业唯一ID")
+    total: int = Field(..., description="事件数量")
+    items: List[PublicOpinionEvent] = Field(..., description="舆情事件列表")
+
+
+class FinancialReportsResponse(BaseModel):
+    """企业财务报告响应。"""
+
+    company_id: str = Field(..., description="企业唯一ID")
+    total: int = Field(..., description="报告数量")
+    items: List[FinancialReport] = Field(..., description="财务报告列表")
+
+
+class RecruitmentEventsResponse(BaseModel):
+    """企业招聘事件响应。"""
+
+    company_id: str = Field(..., description="企业唯一ID")
+    total: int = Field(..., description="事件数量")
+    items: List[RecruitmentEvent] = Field(..., description="招聘事件列表")
 
 
 class HealthResponse(BaseModel):
@@ -234,6 +334,49 @@ class AnalysisRequest(BaseModel):
         return value
 
 
+class TriggeredRuleItem(BaseModel):
+    """Risk Rule Engine 触发的规则条目。"""
+
+    rule_id: str = Field(..., description="规则唯一ID")
+    rule_name: str = Field(..., description="规则名称")
+    dimension: str = Field(..., description="所属维度")
+    evidence_id: str = Field(..., description="关联的 Evidence ID")
+    score: int = Field(..., description="该规则分值")
+    severity: str = Field(..., description="严重程度: critical/high/medium/low")
+    description: str = Field("", description="风险解释")
+
+
+class HardRuleHitItem(BaseModel):
+    """Risk Rule Engine 触发的硬规则条目。"""
+
+    rule_id: str = Field(..., description="硬规则唯一ID")
+    reason: str = Field(..., description="触发原因")
+    force_level: str = Field(..., description="强制提升到的风险等级")
+
+
+class RiskScoring(BaseModel):
+    """Risk Rule Engine 确定性评分结果（V2.1 新增）。
+
+    由 Rule Engine 确定，不允许 LLM 直接修改。
+    """
+
+    risk_score: int = Field(..., description="总风险分（正整数，越大越严重）")
+    risk_level: str = Field(..., description="风险等级（低风险/中风险/中高风险/高风险）")
+    triggered_rules: List[TriggeredRuleItem] = Field(
+        default_factory=list, description="触发的规则列表"
+    )
+    hard_rule_hits: List[HardRuleHitItem] = Field(
+        default_factory=list, description="触发的硬规则列表"
+    )
+    dimension_scores: Dict[str, float] = Field(
+        default_factory=dict, description="各维度得分"
+    )
+    evidence_ids: List[str] = Field(
+        default_factory=list, description="参与评分的 Evidence IDs（去重）"
+    )
+    total_evidence_count: int = Field(0, description="参与评分的 Evidence 总数")
+
+
 class AnalysisResponse(BaseModel):
     """POST /api/analysis 响应。"""
 
@@ -244,10 +387,10 @@ class AnalysisResponse(BaseModel):
     verification_status: Optional[str] = Field(
         None, description="Harness 审核状态：PASS / UNRESOLVED"
     )
-    risk_level: Optional[str] = Field(None, description="风险等级（best-effort 解析）")
+    risk_level: Optional[str] = Field(None, description="风险等级（Rule Engine 确定，LLM best-effort 兜底）")
     summary: Optional[str] = Field(None, description="风险总结章节（best-effort 解析）")
     evidence_ids: List[str] = Field(
-        default_factory=list, description="关键证据编号（Bxxx/Jxxx/Rxxx，去重保序）"
+        default_factory=list, description="关键证据编号（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx，去重保序）"
     )
     related_companies: List[str] = Field(
         default_factory=list, description="报告涉及的关联企业ID（不含目标企业）"
@@ -256,6 +399,9 @@ class AnalysisResponse(BaseModel):
         None, description="最终报告文件相对路径（runs/web/<id>/report_final.md）"
     )
     duration_seconds: float = Field(..., description="Harness 分析耗时（秒）")
+    risk_scoring: Optional[RiskScoring] = Field(
+        None, description="Risk Rule Engine 确定性评分结果（V2.1 新增）"
+    )
 
 
 # ============================================================

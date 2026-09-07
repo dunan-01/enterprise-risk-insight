@@ -59,9 +59,12 @@ from .models import (
     CreateTaskRequest,
     ErrorDetail,
     EvidenceResponse,
+    FinancialReportsResponse,
     InvestigationNetworkResponse,
     JudicialEventsResponse,
     ProfileResponse,
+    PublicOpinionEventsResponse,
+    RecruitmentEventsResponse,
     RelationsResponse,
     RelationNetworkResponse,
     SearchResponse,
@@ -232,6 +235,72 @@ def get_company_relations(company_id: str) -> RelationsResponse:
 
     items: List[Dict[str, Any]] = _run_tool(deps.get_company_relations, cid)
     return RelationsResponse(company_id=cid, total=len(items), items=items)
+
+
+# ------------------------------------------------------------
+# 接口 5.1：企业舆情事件
+# ------------------------------------------------------------
+
+
+@router.get(
+    "/companies/{company_id}/public-opinion",
+    response_model=PublicOpinionEventsResponse,
+    responses={404: {"model": ErrorDetail}, 500: {"model": ErrorDetail}},
+    summary="查询企业舆情事件",
+    description="查询指定企业的全部舆情事件，按发布时间从新到旧排序。",
+)
+def get_company_public_opinion(company_id: str) -> PublicOpinionEventsResponse:
+    """查询指定企业的全部舆情事件。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    items: List[Dict[str, Any]] = _run_tool(deps.get_public_opinion_events, cid)
+    return PublicOpinionEventsResponse(company_id=cid, total=len(items), items=items)
+
+
+# ------------------------------------------------------------
+# 接口 5.2：企业财务报告
+# ------------------------------------------------------------
+
+
+@router.get(
+    "/companies/{company_id}/financial-reports",
+    response_model=FinancialReportsResponse,
+    responses={404: {"model": ErrorDetail}, 500: {"model": ErrorDetail}},
+    summary="查询企业财务报告",
+    description="查询指定企业的全部财务报告，包含计算指标。",
+)
+def get_company_financial_reports(company_id: str) -> FinancialReportsResponse:
+    """查询指定企业的全部财务报告。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    items: List[Dict[str, Any]] = _run_tool(deps.get_financial_reports, cid)
+    return FinancialReportsResponse(company_id=cid, total=len(items), items=items)
+
+
+# ------------------------------------------------------------
+# 接口 5.3：企业招聘事件
+# ------------------------------------------------------------
+
+
+@router.get(
+    "/companies/{company_id}/recruitment-events",
+    response_model=RecruitmentEventsResponse,
+    responses={404: {"model": ErrorDetail}, 500: {"model": ErrorDetail}},
+    summary="查询企业招聘事件",
+    description="查询指定企业的全部招聘事件，按发布时间从新到旧排序。",
+)
+def get_company_recruitment_events(company_id: str) -> RecruitmentEventsResponse:
+    """查询指定企业的全部招聘事件。"""
+
+    cid = deps.normalize_company_id(company_id)
+    _require_company_exists(cid)
+
+    items: List[Dict[str, Any]] = _run_tool(deps.get_recruitment_events, cid)
+    return RecruitmentEventsResponse(company_id=cid, total=len(items), items=items)
 
 
 # ------------------------------------------------------------
@@ -849,8 +918,9 @@ def get_system_status() -> SystemStatusResponse:
     },
     summary="查询 Evidence 详情",
     description=(
-        "根据 Evidence ID（Bxxx/Jxxx/Rxxx）查询确定性数据库事实。"
+        "根据 Evidence ID（Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）查询确定性数据库事实。"
         "Bxxx → business_events，Jxxx → judicial_events，Rxxx → relations。"
+        "Pxxx → public_opinion_events，Fxxx → financial_reports，Hxxx → recruitment_events。"
         "返回原始记录，不包含模型判断。"
     ),
     tags=["evidence"],
@@ -873,13 +943,13 @@ def get_evidence_detail(evidence_id: str) -> EvidenceResponse:
             ),
         )
 
-    # 验证格式：必须以 B/J/R 开头 + 数字
-    if not (len(eid) >= 2 and eid[0] in ("B", "J", "R") and eid[1:].isdigit()):
+    # 验证格式：必须以 B/J/R/P/F/H 开头 + 数字
+    if not (len(eid) >= 2 and eid[0] in ("B", "J", "R", "P", "F", "H") and eid[1:].isdigit()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=deps.error_detail(
                 ERROR_INVALID_KEYWORD,
-                f"无效的 Evidence ID 格式：{eid}（应为 Bxxx/Jxxx/Rxxx）",
+                f"无效的 Evidence ID 格式：{eid}（应为 Bxxx/Jxxx/Rxxx/Pxxx/Fxxx/Hxxx）",
             ),
         )
 

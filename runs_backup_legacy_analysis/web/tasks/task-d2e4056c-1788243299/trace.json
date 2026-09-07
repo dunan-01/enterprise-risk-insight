@@ -1,0 +1,364 @@
+{
+  "task_id": "task-d2e4056c-1788243299",
+  "company_id": "C006",
+  "task_status": "cancelled",
+  "event_count": 23,
+  "events": [
+    {
+      "event_id": "trace_49dd701f",
+      "sequence": 1,
+      "timestamp": "2026-09-01T06:16:13.941095+00:00",
+      "type": "analysis_started",
+      "agent": "risk-orchestrator",
+      "title": "开始企业风险调查",
+      "description": "AI 风险调查流程已启动",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e4aa6769",
+      "sequence": 2,
+      "timestamp": "2026-09-01T06:15:12.175000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "嘉盛产业投资有限公司（C006）",
+      "company_id": "C006",
+      "company_name": "嘉盛产业投资有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_88d8ae53",
+      "sequence": 3,
+      "timestamp": "2026-09-01T06:15:27.150000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "嘉盛产业投资有限公司（C006）",
+      "company_id": "C006",
+      "company_name": "嘉盛产业投资有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B009"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e2f3cf18",
+      "sequence": 4,
+      "timestamp": "2026-09-01T06:15:29.424000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "嘉盛产业投资有限公司（C006）",
+      "company_id": "C006",
+      "company_name": "嘉盛产业投资有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_f58921ad",
+      "sequence": 5,
+      "timestamp": "2026-09-01T06:15:42.440000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "嘉盛产业投资有限公司（C006）",
+      "company_id": "C006",
+      "company_name": "嘉盛产业投资有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R006",
+        "R007",
+        "R008"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_895e946a",
+      "sequence": 6,
+      "timestamp": "2026-09-01T06:15:42.440000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C005",
+      "company_id": "C005",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_18e116c1",
+      "sequence": 7,
+      "timestamp": "2026-09-01T06:15:42.440000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C007",
+      "company_id": "C007",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_b8a47867",
+      "sequence": 8,
+      "timestamp": "2026-09-01T06:15:42.440000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C008",
+      "company_id": "C008",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_4da2df4e",
+      "sequence": 9,
+      "timestamp": "2026-09-01T06:15:49.075000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "博远数字科技有限公司（C005）",
+      "company_id": "C005",
+      "company_name": "博远数字科技有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_0176a081",
+      "sequence": 10,
+      "timestamp": "2026-09-01T06:15:49.405000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "鼎峰建设工程有限公司（C007）",
+      "company_id": "C007",
+      "company_name": "鼎峰建设工程有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_d2b24553",
+      "sequence": 11,
+      "timestamp": "2026-09-01T06:15:49.662000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业基本信息",
+      "description": "瑞泽机械制造有限公司（C008）",
+      "company_id": "C008",
+      "company_name": "瑞泽机械制造有限公司",
+      "tool": "risk_get_company_profile",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_915aa677",
+      "sequence": 12,
+      "timestamp": "2026-09-01T06:15:52.989000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "博远数字科技有限公司（C005）",
+      "company_id": "C005",
+      "company_name": "博远数字科技有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B008"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_75719545",
+      "sequence": 13,
+      "timestamp": "2026-09-01T06:15:53.316000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "鼎峰建设工程有限公司（C007）",
+      "company_id": "C007",
+      "company_name": "鼎峰建设工程有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B012",
+        "B011",
+        "B010"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_744ede6f",
+      "sequence": 14,
+      "timestamp": "2026-09-01T06:15:53.541000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询工商事件",
+      "description": "瑞泽机械制造有限公司（C008）",
+      "company_id": "C008",
+      "company_name": "瑞泽机械制造有限公司",
+      "tool": "risk_get_business_events",
+      "evidence_ids": [
+        "B013"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_2ad257c3",
+      "sequence": 15,
+      "timestamp": "2026-09-01T06:15:53.862000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "博远数字科技有限公司（C005）",
+      "company_id": "C005",
+      "company_name": "博远数字科技有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J007"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_43d520db",
+      "sequence": 16,
+      "timestamp": "2026-09-01T06:15:54.179000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "鼎峰建设工程有限公司（C007）",
+      "company_id": "C007",
+      "company_name": "鼎峰建设工程有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J011",
+        "J010",
+        "J009",
+        "J008"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_fe9448ac",
+      "sequence": 17,
+      "timestamp": "2026-09-01T06:15:54.493000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询司法事件",
+      "description": "瑞泽机械制造有限公司（C008）",
+      "company_id": "C008",
+      "company_name": "瑞泽机械制造有限公司",
+      "tool": "risk_get_judicial_events",
+      "evidence_ids": [
+        "J013",
+        "J012"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_a17a57c3",
+      "sequence": 18,
+      "timestamp": "2026-09-01T06:16:06.325000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "博远数字科技有限公司（C005）",
+      "company_id": "C005",
+      "company_name": "博远数字科技有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R005",
+        "R006"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_bb07bcb9",
+      "sequence": 19,
+      "timestamp": "2026-09-01T06:16:06.325000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C004",
+      "company_id": "C004",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_33023e1f",
+      "sequence": 20,
+      "timestamp": "2026-09-01T06:16:06.325000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "嘉盛产业投资有限公司（C006）",
+      "company_id": "C006",
+      "company_name": "嘉盛产业投资有限公司",
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_9f08378c",
+      "sequence": 21,
+      "timestamp": "2026-09-01T06:16:06.746000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "鼎峰建设工程有限公司（C007）",
+      "company_id": "C007",
+      "company_name": "鼎峰建设工程有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R007",
+        "R009"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_4c84f703",
+      "sequence": 22,
+      "timestamp": "2026-09-01T06:16:07.007000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "查询企业关联关系",
+      "description": "瑞泽机械制造有限公司（C008）",
+      "company_id": "C008",
+      "company_name": "瑞泽机械制造有限公司",
+      "tool": "risk_get_company_relations",
+      "evidence_ids": [
+        "R008",
+        "R009",
+        "R010"
+      ],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_f3cb906b",
+      "sequence": 23,
+      "timestamp": "2026-09-01T06:16:13.942005+00:00",
+      "type": "analysis_cancelled",
+      "agent": "risk-orchestrator",
+      "title": "分析已取消",
+      "description": "用户主动终止本次企业风险调查",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    }
+  ]
+}

@@ -227,7 +227,7 @@ export default function InvestigationTrace({
   if (!trace || trace.events.length === 0) {
     return (
       <div className="trace-container">
-        <div className="trace-empty">暂无追踪事件</div>
+        <div className="trace-empty">尚无新版 AI 风险调查记录</div>
       </div>
     )
   }

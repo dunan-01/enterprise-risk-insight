@@ -16,6 +16,9 @@ from src.risk_tools import (
     get_business_events,
     get_judicial_events,
     get_company_relations,
+    get_public_opinion_events,
+    get_financial_reports,
+    get_recruitment_events,
 )
 
 
@@ -56,6 +59,15 @@ def main():
 
         elif action == "get_company_relations":
             result = get_company_relations(value)
+
+        elif action == "get_public_opinion_events":
+            result = get_public_opinion_events(value)
+
+        elif action == "get_financial_reports":
+            result = get_financial_reports(value)
+
+        elif action == "get_recruitment_events":
+            result = get_recruitment_events(value)
 
         else:
             result = {

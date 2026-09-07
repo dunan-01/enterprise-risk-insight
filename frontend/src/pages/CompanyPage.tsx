@@ -7,8 +7,11 @@ import { ErrorBlock, SkeletonBlock } from '../components/States'
 import { fmtDate, fmtWan } from '../lib/format'
 import AnalysisTab from './tabs/AnalysisTab'
 import BusinessEventsTab from './tabs/BusinessEventsTab'
+import FinancialReportsTab from './tabs/FinancialReportsTab'
 import JudicialEventsTab from './tabs/JudicialEventsTab'
 import OverviewTab from './tabs/OverviewTab'
+import PublicOpinionTab from './tabs/PublicOpinionTab'
+import RecruitmentTab from './tabs/RecruitmentTab'
 import RelationsTab from './tabs/RelationsTab'
 
 /** AI 分析状态机：loading-history → (done | not-analyzed | task-running) → (done | error | cancelled) */
@@ -25,6 +28,9 @@ const TABS = [
   { key: 'business', label: '工商动态' },
   { key: 'judicial', label: '司法风险' },
   { key: 'relations', label: '关联关系' },
+  { key: 'opinion', label: '舆情信息' },
+  { key: 'financial', label: '财务信息' },
+  { key: 'recruitment', label: '招聘信息' },
   { key: 'analysis', label: 'AI 风险洞察' },
 ] as const
 
@@ -348,6 +354,9 @@ export default function CompanyPage() {
           {activeTab === 'relations' && (
             <RelationsTab companyId={companyId} companyName={profile.company_name} />
           )}
+          {activeTab === 'opinion' && <PublicOpinionTab companyId={companyId} />}
+          {activeTab === 'financial' && <FinancialReportsTab companyId={companyId} />}
+          {activeTab === 'recruitment' && <RecruitmentTab companyId={companyId} />}
           {activeTab === 'analysis' && (
             <AnalysisTab
               companyId={companyId}

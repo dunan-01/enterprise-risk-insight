@@ -1,0 +1,64 @@
+{
+  "task_id": "task-cbff331b-1788157922",
+  "company_id": "C010",
+  "task_status": "cancelled",
+  "event_count": 4,
+  "events": [
+    {
+      "event_id": "trace_5988f5cc",
+      "sequence": 1,
+      "timestamp": "2026-08-31T06:32:16.108013+00:00",
+      "type": "analysis_started",
+      "agent": "risk-orchestrator",
+      "title": "开始企业风险调查",
+      "description": "AI 风险调查流程已启动",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_166fbe66",
+      "sequence": 2,
+      "timestamp": "2026-08-31T06:32:14.224000+00:00",
+      "type": "tool_call",
+      "agent": "risk-orchestrator",
+      "title": "搜索企业",
+      "description": "关键词：C010",
+      "company_id": "C010",
+      "company_name": "",
+      "tool": "risk_search_company",
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_e5d9505a",
+      "sequence": 3,
+      "timestamp": "2026-08-31T06:32:14.224000+00:00",
+      "type": "company_discovered",
+      "agent": "risk-orchestrator",
+      "title": "发现关联企业",
+      "description": "C010",
+      "company_id": "C010",
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_155393df",
+      "sequence": 4,
+      "timestamp": "2026-08-31T06:32:16.108082+00:00",
+      "type": "analysis_cancelled",
+      "agent": "risk-orchestrator",
+      "title": "分析已取消",
+      "description": "用户主动终止本次企业风险调查",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    }
+  ]
+}

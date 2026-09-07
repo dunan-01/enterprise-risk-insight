@@ -1,0 +1,18 @@
+{
+  "task_id": "task-5733b60e-1788163024",
+  "company_id": "C010",
+  "status": "cancelled",
+  "created_at": "2026-08-31T07:57:04.148244+00:00",
+  "started_at": "2026-08-31T07:57:04.148675+00:00",
+  "finished_at": "2026-08-31T07:57:12.727710+00:00",
+  "error": null,
+  "result": null,
+  "event_count": 0,
+  "last_event_at": null,
+  "current_stage": null,
+  "process_pid": 29859,
+  "process_pgid": 29859,
+  "process_alive": false,
+  "cancel_reason": "user_cancelled",
+  "replacement_task_id": null
+}

@@ -175,3 +175,70 @@ export const get_company_relations = tool({
         )
     },
 })
+
+
+// ============================================================
+// 舆情事件
+// ============================================================
+export const get_public_opinion_events = tool({
+    description:
+        "查询指定企业的舆情事件，包括产品质量、合同纠纷、环境问题、劳动争议、融资消息、项目中标、市场传闻等。返回舆情标题、情感倾向、核实状态等，注意区分已核实和未经核实的信息。",
+
+    args: {
+        company_id: tool.schema
+            .string()
+            .describe("企业唯一ID，例如 C001"),
+    },
+
+    async execute(args, context) {
+        return callPython(
+            "get_public_opinion_events",
+            args.company_id,
+            context
+        )
+    },
+})
+
+// ============================================================
+// 财务报告
+// ============================================================
+export const get_financial_reports = tool({
+    description:
+        "查询指定企业的财务报告，包括营业收入、净利润、总资产、总负债、经营现金流、应收账款等。返回连续年度数据，附带资产负债率、流动比率、净利率、同比增长率等计算指标。",
+
+    args: {
+        company_id: tool.schema
+            .string()
+            .describe("企业唯一ID，例如 C001"),
+    },
+
+    async execute(args, context) {
+        return callPython(
+            "get_financial_reports",
+            args.company_id,
+            context
+        )
+    },
+})
+
+// ============================================================
+// 招聘事件
+// ============================================================
+export const get_recruitment_events = tool({
+    description:
+        "查询指定企业的招聘信息，包括岗位类型、岗位名称、计划招聘人数、薪资范围、招聘状态等。招聘信息属于弱经营信号，需结合财务、司法、舆情等多源数据综合判断。",
+
+    args: {
+        company_id: tool.schema
+            .string()
+            .describe("企业唯一ID，例如 C001"),
+    },
+
+    async execute(args, context) {
+        return callPython(
+            "get_recruitment_events",
+            args.company_id,
+            context
+        )
+    },
+})

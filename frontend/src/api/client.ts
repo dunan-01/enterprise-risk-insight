@@ -11,9 +11,12 @@ import type {
   ApiErrorBody,
   BusinessEventsResponse,
   EvidenceResponse,
+  FinancialReportsResponse,
   InvestigationNetworkResponse,
   JudicialEventsResponse,
   ProfileResponse,
+  PublicOpinionEventsResponse,
+  RecruitmentEventsResponse,
   RelationNetworkResponse,
   RelationsResponse,
   SearchResponse,
@@ -120,6 +123,27 @@ export const api = {
   /** 一跳关联关系 */
   relations(companyId: string): Promise<RelationsResponse> {
     return request<RelationsResponse>(`/api/companies/${encodeURIComponent(companyId)}/relations`)
+  },
+
+  /** 舆情事件 */
+  publicOpinion(companyId: string): Promise<PublicOpinionEventsResponse> {
+    return request<PublicOpinionEventsResponse>(
+      `/api/companies/${encodeURIComponent(companyId)}/public-opinion`,
+    )
+  },
+
+  /** 财务报告 */
+  financialReports(companyId: string): Promise<FinancialReportsResponse> {
+    return request<FinancialReportsResponse>(
+      `/api/companies/${encodeURIComponent(companyId)}/financial-reports`,
+    )
+  },
+
+  /** 招聘事件 */
+  recruitmentEvents(companyId: string): Promise<RecruitmentEventsResponse> {
+    return request<RecruitmentEventsResponse>(
+      `/api/companies/${encodeURIComponent(companyId)}/recruitment-events`,
+    )
   },
 
   /** V1.1: 企业完整关联关系网络（多跳 BFS） */

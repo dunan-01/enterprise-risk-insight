@@ -95,3 +95,72 @@ CREATE INDEX IF NOT EXISTS idx_judicial_events_type    ON judicial_events(case_t
 CREATE INDEX IF NOT EXISTS idx_relations_from          ON relations(from_company_id);
 CREATE INDEX IF NOT EXISTS idx_relations_to            ON relations(to_company_id);
 CREATE INDEX IF NOT EXISTS idx_relations_type          ON relations(relation_type);
+
+-- ------------------------------------------------------------
+-- 5. public_opinion_events 舆情信息表：企业舆情事件
+--    含：产品质量、合同纠纷、环境问题、劳动争议、融资消息、项目中标、市场传闻等
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public_opinion_events (
+    event_id            TEXT PRIMARY KEY,               -- 事件唯一ID（Pxxx）
+    company_id          TEXT NOT NULL REFERENCES companies(company_id),
+    publish_date        TEXT,                              -- 发布日期
+    topic               TEXT,                              -- 主题
+    sentiment           TEXT,                              -- 情感倾向（positive/neutral/negative）
+    source_type         TEXT,                              -- 媒体类型
+    source_name         TEXT,                              -- 来源名称
+    title               TEXT,                              -- 标题
+    summary             TEXT,                              -- 摘要
+    verification_status TEXT,                              -- 核实状态（verified/partially_verified/unverified）
+    response_status     TEXT,                              -- 企业回应状态
+    data_type           TEXT NOT NULL DEFAULT 'simulated'  -- 数据来源类型
+);
+
+-- ------------------------------------------------------------
+-- 6. financial_reports 财务报告表：企业连续年度财务数据
+--    含：营收、净利润、资产负债、现金流、审计意见及计算指标
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS financial_reports (
+    report_id            TEXT PRIMARY KEY,               -- 报告唯一ID（Fxxx）
+    company_id           TEXT NOT NULL REFERENCES companies(company_id),
+    period               TEXT,                              -- 报告期（如 2023FY）
+    report_date          TEXT,                              -- 报告日期
+    revenue              REAL,                              -- 营业收入（元）
+    net_profit           REAL,                              -- 净利润（元）
+    total_assets         REAL,                              -- 总资产（元）
+    total_liabilities    REAL,                              -- 总负债（元）
+    current_assets       REAL,                              -- 流动资产（元）
+    current_liabilities  REAL,                              -- 流动负债（元）
+    operating_cash_flow  REAL,                              -- 经营现金流（元）
+    accounts_receivable  REAL,                              -- 应收账款（元）
+    audit_opinion        TEXT,                              -- 审计意见
+    currency             TEXT DEFAULT 'CNY',                -- 币种
+    data_type            TEXT NOT NULL DEFAULT 'simulated'  -- 数据来源类型
+);
+
+-- ------------------------------------------------------------
+-- 7. recruitment_events 招聘信息表：企业招聘动态事件
+--    含：招聘岗位、人数、薪资、状态、招聘类型等弱经营信号
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS recruitment_events (
+    event_id           TEXT PRIMARY KEY,               -- 事件唯一ID（Hxxx）
+    company_id         TEXT NOT NULL REFERENCES companies(company_id),
+    publish_date       TEXT,                              -- 发布日期
+    event_type         TEXT,                              -- 招聘事件类型
+    position_category  TEXT,                              -- 岗位类别
+    position_name      TEXT,                              -- 岗位名称
+    planned_headcount  INTEGER,                           -- 计划招聘人数
+    salary_min         REAL,                              -- 最低薪资（元）
+    salary_max         REAL,                              -- 最高薪资（元）
+    location           TEXT,                              -- 工作地点
+    status             TEXT,                              -- 状态
+    description        TEXT,                              -- 说明
+    data_type          TEXT NOT NULL DEFAULT 'simulated'  -- 数据来源类型
+);
+
+-- 查询性能索引
+CREATE INDEX IF NOT EXISTS idx_po_company ON public_opinion_events(company_id);
+CREATE INDEX IF NOT EXISTS idx_po_sentiment ON public_opinion_events(sentiment);
+CREATE INDEX IF NOT EXISTS idx_fr_company ON financial_reports(company_id);
+CREATE INDEX IF NOT EXISTS idx_fr_period ON financial_reports(period);
+CREATE INDEX IF NOT EXISTS idx_re_company ON recruitment_events(company_id);
+CREATE INDEX IF NOT EXISTS idx_re_type ON recruitment_events(event_type);

@@ -360,14 +360,236 @@ def get_relation_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
         conn.close()
 
 
+# ============================================================
+# Tool 7：查询企业舆情事件（P/F/H 新增）
+# ============================================================
+
+def get_public_opinion_events(company_id: str) -> List[Dict[str, Any]]:
+    """
+    查询企业所有舆情事件。按发布时间从新到旧排序。
+    """
+
+    company_id = company_id.strip().upper()
+
+    conn = get_connection()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM public_opinion_events
+            WHERE company_id = ?
+            ORDER BY publish_date DESC, event_id
+            """,
+            (company_id,),
+        ).fetchall()
+
+        return rows_to_dicts(rows)
+
+    finally:
+        conn.close()
+
+
+def get_financial_reports(company_id: str) -> List[Dict[str, Any]]:
+    """
+    查询企业所有财务报告。按期间排序。
+
+    附加确定性计算指标（安全除法，分母为 0 或 None 时返回 None）：
+    - debt_ratio: total_liabilities / total_assets（资产负债率）
+    - current_ratio: current_assets / current_liabilities（流动比率）
+    - net_margin: net_profit / revenue（净利率）
+    - revenue_yoy: (current_revenue - previous_revenue) / previous_revenue（营业收入同比增长率）
+    - profit_yoy: (current_profit - previous_profit) / previous_profit（净利润同比增长率）
+    """
+
+    company_id = company_id.strip().upper()
+
+    conn = get_connection()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM financial_reports
+            WHERE company_id = ?
+            ORDER BY period ASC, report_id
+            """,
+            (company_id,),
+        ).fetchall()
+
+        reports = rows_to_dicts(rows)
+
+        # 附加计算指标
+        for i, report in enumerate(reports):
+            # 安全除法辅助函数
+            def _safe_div(
+                numerator: Optional[float], denominator: Optional[float]
+            ) -> Optional[float]:
+                if numerator is None or denominator is None:
+                    return None
+                if denominator == 0:
+                    return None
+                return numerator / denominator
+
+            report["debt_ratio"] = _safe_div(
+                report.get("total_liabilities"), report.get("total_assets")
+            )
+            report["current_ratio"] = _safe_div(
+                report.get("current_assets"), report.get("current_liabilities")
+            )
+            report["net_margin"] = _safe_div(
+                report.get("net_profit"), report.get("revenue")
+            )
+
+            # 同比指标：第一期没有同比数据
+            if i == 0:
+                report["revenue_yoy"] = None
+                report["profit_yoy"] = None
+            else:
+                prev = reports[i - 1]
+                prev_revenue = prev.get("revenue")
+                curr_revenue = report.get("revenue")
+                if prev_revenue is None or curr_revenue is None:
+                    report["revenue_yoy"] = None
+                elif prev_revenue == 0:
+                    report["revenue_yoy"] = None
+                else:
+                    report["revenue_yoy"] = (curr_revenue - prev_revenue) / prev_revenue
+
+                prev_profit = prev.get("net_profit")
+                curr_profit = report.get("net_profit")
+                if prev_profit is None or curr_profit is None:
+                    report["profit_yoy"] = None
+                elif prev_profit == 0:
+                    report["profit_yoy"] = None
+                else:
+                    report["profit_yoy"] = (curr_profit - prev_profit) / prev_profit
+
+        return reports
+
+    finally:
+        conn.close()
+
+
+def get_recruitment_events(company_id: str) -> List[Dict[str, Any]]:
+    """
+    查询企业所有招聘事件。按发布时间从新到旧排序。
+    """
+
+    company_id = company_id.strip().upper()
+
+    conn = get_connection()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM recruitment_events
+            WHERE company_id = ?
+            ORDER BY publish_date DESC, event_id
+            """,
+            (company_id,),
+        ).fetchall()
+
+        return rows_to_dicts(rows)
+
+    finally:
+        conn.close()
+
+
+# ============================================================
+# Tool 8：根据 Evidence ID 查询 P/F/H 原始记录
+# ============================================================
+
+def get_public_opinion_event_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Pxxx）查询 public_opinion_events 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("P"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT pe.*, c.company_name
+            FROM public_opinion_events AS pe
+            JOIN companies AS c ON pe.company_id = c.company_id
+            WHERE pe.event_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def get_financial_report_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Fxxx）查询 financial_reports 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("F"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT fr.*, c.company_name
+            FROM financial_reports AS fr
+            JOIN companies AS c ON fr.company_id = c.company_id
+            WHERE fr.report_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
+def get_recruitment_event_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
+    """
+    根据 evidence_id（Hxxx）查询 recruitment_events 原始记录。
+
+    返回 dict 或 None（不存在时）。
+    """
+    evidence_id = evidence_id.strip().upper()
+    if not evidence_id.startswith("H"):
+        return None
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT re.*, c.company_name
+            FROM recruitment_events AS re
+            JOIN companies AS c ON re.company_id = c.company_id
+            WHERE re.event_id = ?
+            """,
+            (evidence_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        conn.close()
+
+
 def get_evidence_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
     """
     根据 Evidence ID 查询确定性原始事实。
 
-    支持三类 Evidence：
+    支持六类 Evidence：
     - Bxxx → business_events（工商/经营事件）
     - Jxxx → judicial_events（司法事件）
     - Rxxx → relations（企业关系）
+    - Pxxx → public_opinion_events（舆情事件）
+    - Fxxx → financial_reports（财务报告）
+    - Hxxx → recruitment_events（招聘事件）
 
     返回统一外层结构：
     {
@@ -434,6 +656,48 @@ def get_evidence_by_id(evidence_id: str) -> Optional[Dict[str, Any]]:
             "from_company_name": from_name,
             "to_company_id": row.get("to_company_id"),
             "to_company_name": to_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    elif prefix == "P":
+        row = get_public_opinion_event_by_id(evidence_id)
+        if row is None:
+            return None
+        company_name = row.pop("company_name", None)
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "public_opinion",
+            "company_id": row.get("company_id"),
+            "company_name": company_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    elif prefix == "F":
+        row = get_financial_report_by_id(evidence_id)
+        if row is None:
+            return None
+        company_name = row.pop("company_name", None)
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "financial",
+            "company_id": row.get("company_id"),
+            "company_name": company_name,
+            "data": row,
+            "source": row.get("source", "simulated"),
+        }
+
+    elif prefix == "H":
+        row = get_recruitment_event_by_id(evidence_id)
+        if row is None:
+            return None
+        company_name = row.pop("company_name", None)
+        return {
+            "evidence_id": evidence_id,
+            "evidence_type": "recruitment",
+            "company_id": row.get("company_id"),
+            "company_name": company_name,
             "data": row,
             "source": row.get("source", "simulated"),
         }

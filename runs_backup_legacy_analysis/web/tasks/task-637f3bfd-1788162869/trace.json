@@ -1,0 +1,36 @@
+{
+  "task_id": "task-637f3bfd-1788162869",
+  "company_id": "C010",
+  "task_status": "cancelled",
+  "event_count": 2,
+  "events": [
+    {
+      "event_id": "trace_243bf24f",
+      "sequence": 1,
+      "timestamp": "2026-08-31T07:54:37.899938+00:00",
+      "type": "analysis_started",
+      "agent": "risk-orchestrator",
+      "title": "开始企业风险调查",
+      "description": "AI 风险调查流程已启动",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    },
+    {
+      "event_id": "trace_c874f787",
+      "sequence": 2,
+      "timestamp": "2026-08-31T07:54:37.899952+00:00",
+      "type": "analysis_cancelled",
+      "agent": "risk-orchestrator",
+      "title": "分析已取消",
+      "description": "用户主动终止本次企业风险调查",
+      "company_id": null,
+      "company_name": null,
+      "tool": null,
+      "evidence_ids": [],
+      "status": "completed"
+    }
+  ]
+}

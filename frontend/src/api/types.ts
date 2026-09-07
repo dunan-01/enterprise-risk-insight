@@ -140,20 +140,104 @@ export interface RelationsResponse {
 }
 
 // ------------------------------------------------------------
+// GET /api/companies/{company_id}/public-opinion
+// ------------------------------------------------------------
+export interface PublicOpinionEvent {
+  event_id: string
+  company_id: string
+  publish_date: string | null
+  topic: string | null
+  sentiment: string | null // positive / neutral / negative
+  source_type: string | null
+  source_name: string | null
+  title: string | null
+  summary: string | null
+  verification_status: string | null // verified / partially_verified / unverified
+  response_status: string | null
+  data_type: string
+}
+
+export interface PublicOpinionEventsResponse {
+  company_id: string
+  total: number
+  items: PublicOpinionEvent[]
+}
+
+// ------------------------------------------------------------
+// GET /api/companies/{company_id}/financial-reports
+// ------------------------------------------------------------
+export interface FinancialReport {
+  report_id: string
+  company_id: string
+  period: string | null // e.g. "2023FY"
+  report_date: string | null
+  revenue: number | null
+  net_profit: number | null
+  total_assets: number | null
+  total_liabilities: number | null
+  current_assets: number | null
+  current_liabilities: number | null
+  operating_cash_flow: number | null
+  accounts_receivable: number | null
+  audit_opinion: string | null // unqualified / qualified
+  currency: string | null
+  data_type: string
+  // 计算指标
+  debt_ratio: number | null
+  current_ratio: number | null
+  net_margin: number | null
+  revenue_yoy: number | null
+  profit_yoy: number | null
+}
+
+export interface FinancialReportsResponse {
+  company_id: string
+  total: number
+  items: FinancialReport[]
+}
+
+// ------------------------------------------------------------
+// GET /api/companies/{company_id}/recruitment-events
+// ------------------------------------------------------------
+export interface RecruitmentEvent {
+  event_id: string
+  company_id: string
+  publish_date: string | null
+  event_type: string | null
+  position_category: string | null
+  position_name: string | null
+  planned_headcount: number | null
+  salary_min: number | null
+  salary_max: number | null
+  location: string | null
+  status: string | null
+  description: string | null
+  data_type: string
+}
+
+export interface RecruitmentEventsResponse {
+  company_id: string
+  total: number
+  items: RecruitmentEvent[]
+}
+
+// ------------------------------------------------------------
 // POST /api/analysis
 // ------------------------------------------------------------
 export interface AnalysisResponse {
-  task_id?: string | null
-  company_id: string
-  status: string // 恒为 completed
-  report: string // Markdown 全文
-  verification_status: string | null // PASS / UNRESOLVED
-  risk_level: string | null // 风险等级字符串（可能为 null）
-  summary: string | null
-  evidence_ids: string[] // Bxxx 工商 / Jxxx 司法 / Rxxx 关系
-  related_companies: string[] // 报告涉及的关联企业ID（不含目标企业）
-  report_path: string | null
-  duration_seconds: number
+    task_id?: string | null
+    company_id: string
+    status: string // 恒为 completed
+    report: string // Markdown 全文
+    verification_status: string | null // PASS / UNRESOLVED
+    risk_level: string | null // 风险等级字符串（可能为 null）
+    summary: string | null
+    evidence_ids: string[] // Bxxx 工商 / Jxxx 司法 / Rxxx 关系 / Pxxx 舆情 / Fxxx 财务 / Hxxx 招聘
+    related_companies: string[] // 报告涉及的关联企业ID（不含目标企业）
+    report_path: string | null
+    duration_seconds: number
+    analysis_version: string | null // 分析版本（如 "v2-multisource"）
+    data_sources: string[] // 使用的数据源列表
 }
 
 // ============================================================
@@ -257,7 +341,13 @@ export interface SystemStatusResponse {
 // ============================================================
 export interface EvidenceResponse {
   evidence_id: string
-  evidence_type: 'business' | 'judicial' | 'relation'
+  evidence_type:
+    | 'business'
+    | 'judicial'
+    | 'relation'
+    | 'public_opinion'
+    | 'financial'
+    | 'recruitment'
   company_id: string | null
   company_name: string | null
   from_company_id?: string | null

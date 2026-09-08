@@ -224,6 +224,33 @@ export interface RecruitmentEventsResponse {
 // ------------------------------------------------------------
 // POST /api/analysis
 // ------------------------------------------------------------
+/** RiskScoring 中 own_risk 的结构 */
+export interface OwnRisk {
+  score: number | null
+  level: string | null
+  level_status: string
+}
+
+/** RiskScoring 中 comprehensive_risk 的结构 */
+export interface ComprehensiveRisk {
+  score: number | null
+  level: string | null
+}
+
+/** RiskScoring 结构（V2.1 新增，V2.3B.2 扩展） */
+export interface RiskScoringData {
+  risk_score: number
+  risk_level: string
+  triggered_rules: Record<string, any>[]
+  hard_rule_hits: Record<string, any>[]
+  dimension_scores: Record<string, number>
+  evidence_ids: string[]
+  total_evidence_count: number
+  own_risk?: OwnRisk | null
+  relationship_exposure?: RelationshipExposure | null
+  comprehensive_risk?: ComprehensiveRisk | null
+}
+
 export interface AnalysisResponse {
     task_id?: string | null
     company_id: string
@@ -238,6 +265,7 @@ export interface AnalysisResponse {
     duration_seconds: number
     analysis_version: string | null // 分析版本（如 "v2-multisource"）
     data_sources: string[] // 使用的数据源列表
+    risk_scoring?: RiskScoringData | null
 }
 
 // ============================================================
@@ -410,4 +438,51 @@ export interface InvestigationNetworkResponse {
   nodes: InvestigationNode[]
   edges: InvestigationEdge[]
   stats: InvestigationNetworkStats
+}
+
+// ============================================================
+// V2.3B.2 新增：Relationship Exposure 传导风险类型
+// ============================================================
+
+/** 单条传导路径信息 */
+export interface TransmissionPath {
+  path: string[]
+  depth: number
+  relation_ids: string[]
+  relation_types: string[]
+  transmitted_score: number
+  relation_type_factor: number
+  target_role_factor: number
+  depth_factor: number
+  target_role: string | null
+  transmission_reasons: string[]
+}
+
+/** 单个关联企业的 Exposure Contribution */
+export interface CompanyExposureContribution {
+  company_id: string
+  company_name: string
+  own_score: number
+  own_level: string
+  strongest_path: TransmissionPath | null
+  transmitted_score: number
+  transmission_factors: {
+    relation_type_factor: number
+    target_role_factor: number
+    depth_factor: number
+  } | Record<string, never>
+  all_paths: TransmissionPath[]
+  transmission_reasons: string[]
+}
+
+/** Relationship Exposure 结构 */
+export interface RelationshipExposure {
+  status: string // "CALIBRATED_V1" | "NOT_CALIBRATED"
+  score: number | null
+  level: string | null
+  level_status: string // "CALIBRATED" | "NOT_CALIBRATED"
+  company_contributions: CompanyExposureContribution[]
+  transmission_version: string | null
+  transmission_config_hash: string | null
+  related_company_profiles?: Record<string, any>[] // V2.3B.1 兼容
 }

@@ -70,3 +70,10 @@ htmlcov/
 
 # Run results (大量 JSONL 文件，较大)
 runs/
+
+
+# Local startup scripts
+start_all.sh
+start_backend.sh
+start_fronted.sh
+run.sh

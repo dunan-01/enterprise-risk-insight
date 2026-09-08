@@ -1,0 +1,102 @@
+# ============================================================
+# Risk Transmission Configuration (V2.3B.2)
+#
+# 定义关联企业风险传导的确定性系数。
+# 所有系数集中配置，不散落在 Python 代码中。
+#
+# transmitted_score = own_score
+#     × relation_type_factor
+#     × target_role_factor
+#     × depth_factor
+# ============================================================
+
+version: "1.0.0"
+
+# ------------------------------------------------------------
+# 关系类型传导系数 (relation_type_factor)
+#
+# 取路径中最后一个 relation_type 的系数。
+# 担保：存在直接经济风险传导依据，通常应重点考虑。
+# 股权/对外投资：存在资本价值、投资损失或控制链风险。
+# 共同股东/共同法人：主要表示关联性，不能等价为直接经济风险传导。
+# ------------------------------------------------------------
+relation_type_factor:
+  担保: 0.9
+  股权: 0.7
+  对外投资: 0.7
+  共同股东: 0.3
+  共同法人: 0.3
+
+# ------------------------------------------------------------
+# 目标角色传导系数 (target_role_factor)
+#
+# Target 在关系链中的角色影响传导强度。
+# 角色由路径第一跳（target → next company）推断。
+#
+# guarantor: 担保方 —— 存在直接代偿风险，最强传导
+# guaranteed_party: 被担保方 —— 风险从被担保方传到担保方
+# shareholder: 股东 —— 投资损失风险
+# investee: 被投资方 —— 被投资损失传导
+# investor: 投资方 —— 投资损失风险
+# common_shareholder: 共同股东 —— 仅表示关联性
+# common_legal_rep: 共同法人 —— 仅表示关联性
+# ------------------------------------------------------------
+target_role_factor:
+  guarantor: 1.0
+  guaranteed_party: 0.8
+  shareholder: 0.7
+  investee: 0.7
+  investor: 0.7
+  common_shareholder: 0.3
+  common_legal_rep: 0.3
+
+# ------------------------------------------------------------
+# 路径深度衰减系数 (depth_factor)
+#
+# depth=1 (直接关联): 1.0
+# depth=2 (间接关联): 0.5
+# depth=3: 0.3
+# depth>=4: 0.2
+# ------------------------------------------------------------
+depth_factor:
+  1: 1.0
+  2: 0.5
+  3: 0.3
+  default: 0.2
+
+# ------------------------------------------------------------
+# 多路径策略
+#
+# strongest_only: 同一关联企业只保留最强 effective path
+#   company_exposure_contribution = max(path_transmitted_scores)
+#   保留 all_paths 供审计
+# ------------------------------------------------------------
+multi_path_strategy: "strongest_only"
+
+# ------------------------------------------------------------
+# 风险等级阈值 (独立于 Own Risk)
+#
+# relationship_exposure score 使用独立阈值，
+# 不得直接复用 Own Risk 的 0-25/26-50/51-75/76+ 阈值。
+# ------------------------------------------------------------
+exposure_levels:
+  - level: "低风险"
+    min_score: 0
+    max_score: 50
+  - level: "中风险"
+    min_score: 51
+    max_score: 100
+  - level: "中高风险"
+    min_score: 101
+    max_score: 150
+  - level: "高风险"
+    min_score: 151
+    max_score: 999
+
+# ------------------------------------------------------------
+# 零风险公司处理
+#
+# own_score = 0 → transmitted_score = 0
+# 不因为关系存在就产生明显风险贡献。
+# ------------------------------------------------------------
+zero_risk_zero_transmission: true

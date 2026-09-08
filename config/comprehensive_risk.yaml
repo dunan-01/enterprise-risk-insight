@@ -1,0 +1,81 @@
+# ============================================================
+# Comprehensive Risk Fusion Configuration (V2.4.1)
+#
+# 融合 own_risk 和 relationship_exposure，
+# 生成最终企业风险判断（comprehensive_risk）。
+#
+# 公式：comprehensive_score = max(own_score, exposure_score) + case_bonus
+# ============================================================
+
+version: "1.0.0"
+
+# ------------------------------------------------------------
+# 融合策略
+# ------------------------------------------------------------
+fusion_strategy: "max_dominant_with_bonus"
+
+# ------------------------------------------------------------
+# Case 判定阈值
+#
+# own_is_high: own_score >= high_threshold.own_score
+# exposure_is_high: exposure_score >= high_threshold.exposure_score
+#                   OR has_risk_transmission_source
+# ------------------------------------------------------------
+high_threshold:
+  own_score: 50
+  exposure_score: 50
+
+# ------------------------------------------------------------
+# Case bonus 值
+#
+# Case A (both high):    双重风险，最危险
+# Case B (low+high):     传染风险，不可控
+# Case C (high+low):     孤立风险，可控
+# Case D (both low):     低风险
+# ------------------------------------------------------------
+case_bonuses:
+  A_both_high: 20
+  B_low_own_high_exposure: 10
+  C_high_own_low_exposure: 0
+  D_both_low: 0
+
+# ------------------------------------------------------------
+# Case 标签
+# ------------------------------------------------------------
+case_labels:
+  A: "双重风险"
+  B: "传染风险"
+  C: "孤立风险"
+  D: "低风险"
+
+# ------------------------------------------------------------
+# 综合风险等级阈值
+# ------------------------------------------------------------
+comprehensive_levels:
+  - level: "低风险"
+    min_score: 0
+    max_score: 49
+  - level: "中风险"
+    min_score: 50
+    max_score: 99
+  - level: "中高风险"
+    min_score: 100
+    max_score: 149
+  - level: "高风险"
+    min_score: 150
+    max_score: 9999
+
+# ------------------------------------------------------------
+# 硬规则覆盖
+#
+# 如果 own_risk 包含以下硬规则命中，
+# comprehensive_level = own_risk.level（不降级）
+# comprehensive_score = own_risk.score
+# ------------------------------------------------------------
+hard_rule_override:
+  enabled: true
+  rules:
+    - "HR001"   # bankruptcy
+    - "HR002"   # dishonest_execution
+    - "HR003"   # revoked_license
+    - "HR004"   # high_debt_ratio (>95%)

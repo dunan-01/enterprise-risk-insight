@@ -2,17 +2,21 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import type {
+  AnalysisResponse,
+  CompanyExposureContribution,
   InvestigationNetworkResponse,
   Relation,
   RelationNetworkResponse,
+  RelationshipExposure,
 } from '../../api/types'
-import { RelationTypeTag } from '../../components/Badges'
+import { RelationTypeTag, RiskLevelBadge } from '../../components/Badges'
 import EvidenceDetailDrawer from '../../components/EvidenceDetailDrawer'
 import EvidenceDetailPanel from '../../components/EvidenceDetailPanel'
 import InvestigationNetworkLegend from '../../components/InvestigationNetworkLegend'
 import RelationGraph from '../../components/RelationGraph'
 import { EmptyState, ErrorBlock, LoadingState } from '../../components/States'
 import { fmtDate, fmtMoney, fmtPercent } from '../../lib/format'
+import { riskLevelTone } from '../../lib/presentation'
 
 /** 关联关系 Tab：一跳关联关系表 + 完整关系网络图（多跳 BFS） + AI调查网络（V1.6） */
 export default function RelationsTab({
@@ -41,6 +45,10 @@ export default function RelationsTab({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedNodeEvidenceIds, setSelectedNodeEvidenceIds] = useState<string[]>([])
 
+  // V2.3B.2: Relationship Exposure 数据
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null)
+  const [exposure, setExposure] = useState<RelationshipExposure | null>(null)
+
   const load = useCallback(async () => {
     setState('loading')
     setError(null)
@@ -66,6 +74,14 @@ export default function RelationsTab({
           const latestAnalysis = await api.latestAnalysis(companyId)
           if (latestAnalysis?.task_id) {
             setCompletedTaskId(latestAnalysis.task_id)
+          }
+          // V2.3B.2: 提取 relationship_exposure
+          if (latestAnalysis) {
+            setAnalysisResult(latestAnalysis)
+            const re = latestAnalysis.risk_scoring?.relationship_exposure
+            if (re && re.status === 'CALIBRATED_V1') {
+              setExposure(re)
+            }
           }
         } catch {
           // 历史分析不存在，忽略错误
@@ -249,6 +265,116 @@ export default function RelationsTab({
           </>
         )}
       </div>
+
+      {/* V2.3B.2: 关联风险传导 Exposure 卡片 */}
+      {state === 'done' && exposure && exposure.status === 'CALIBRATED_V1' && (
+        <div className="card">
+          <div className="card-head">
+            <h2>关联风险传导（Relationship Exposure）</h2>
+            <span className="hint">
+              传导版本 {exposure.transmission_version} · 配置 Hash {exposure.transmission_config_hash?.slice(0, 8)}…
+            </span>
+          </div>
+          <div className="card-body">
+            {/* 总览指标 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 16 }}>
+              <div className="result-cell">
+                <div className="k">传导风险分</div>
+                <div className="v" style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                  {exposure.score ?? '-'}
+                </div>
+              </div>
+              <div className="result-cell">
+                <div className="k">传导风险等级</div>
+                <div className="v">
+                  <RiskLevelBadge raw={exposure.level} big />
+                  <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-3)' }}>
+                    独立阈值（0-50/51-100/101-150/151+）
+                  </span>
+                </div>
+              </div>
+              <div className="result-cell">
+                <div className="k">自身风险分</div>
+                <div className="v" style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                  {analysisResult?.risk_scoring?.own_risk?.score ?? analysisResult?.risk_scoring?.risk_score ?? '-'}
+                </div>
+              </div>
+            </div>
+
+            {/* 公司贡献列表 */}
+            {exposure.company_contributions && exposure.company_contributions.length > 0 && (
+              <>
+                <h3 style={{ fontSize: 14, fontWeight: 600, margin: '16px 0 10px', color: 'var(--text-2)' }}>
+                  关联企业传导贡献
+                </h3>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>关联企业</th>
+                        <th>自身风险分</th>
+                        <th>自身风险等级</th>
+                        <th>传导分值</th>
+                        <th>最强路径</th>
+                        <th>路径深度</th>
+                        <th>关系类型系数</th>
+                        <th>角色系数</th>
+                        <th>深度衰减</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exposure.company_contributions
+                        .sort((a, b) => b.transmitted_score - a.transmitted_score)
+                        .map((c: CompanyExposureContribution) => (
+                        <tr key={c.company_id} style={c.transmitted_score > 0 ? { background: 'rgba(245, 158, 11, 0.04)' } : undefined}>
+                          <td style={{ minWidth: 160 }}>
+                            <Link to={`/company/${c.company_id}`} className="company-link">
+                              <span className="company-link-name">{c.company_name || c.company_id}</span>
+                              <span className="company-link-id">{c.company_id}</span>
+                              <span className="company-link-arrow">→</span>
+                            </Link>
+                          </td>
+                          <td className="num" style={{ fontWeight: 600, fontFamily: 'var(--mono)' }}>
+                            {c.own_score}
+                          </td>
+                          <td>
+                            <span className={`tag ${riskLevelTone(c.own_level).className}`}>
+                              {c.own_level}
+                            </span>
+                          </td>
+                          <td className="num" style={{ fontWeight: 700, fontFamily: 'var(--mono)', color: c.transmitted_score > 50 ? 'var(--color-high)' : c.transmitted_score > 0 ? 'var(--color-mid)' : 'var(--text-3)' }}>
+                            {c.transmitted_score}
+                          </td>
+                          <td style={{ fontSize: 12, maxWidth: 280 }}>
+                            {c.strongest_path ? (
+                              <span title={c.strongest_path.path.join(' → ')}>
+                                {c.strongest_path.path.join(' → ')}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-3)' }}>-</span>
+                            )}
+                          </td>
+                          <td className="num">{c.strongest_path?.depth ?? '-'}</td>
+                          <td className="num">{c.transmission_factors.relation_type_factor ?? '-'}</td>
+                          <td className="num">{c.transmission_factors.target_role_factor ?? '-'}</td>
+                          <td className="num">{c.transmission_factors.depth_factor ?? '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {/* 零贡献说明 */}
+            {exposure.company_contributions && exposure.company_contributions.length > 0 && (
+              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-3)' }}>
+                注：自身风险分为 0 的关联企业传导分值为 0（零风险零传导）。传导分值取多条路径中最强路径，不做累加。
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 关系网络图 */}
       {state === 'done' && relations.length > 0 && (

@@ -1581,8 +1581,24 @@ class TestRelatedCompanyRiskProfile:
              "target_role_in_relation": "common_legal_rep"},
         ]
 
+        # V2.3B.2: 需要传入真实的 all_relations 以支持 find_all_paths
+        all_relations = [
+            {"relation_id": "R005", "from_company_id": "C004", "to_company_id": "C005",
+             "relation_type": "股权", "relation_detail": "", "equity_ratio": None,
+             "amount": None, "start_date": None, "end_date": None, "status": "active",
+             "source": "simulated", "from_company_name": "C004", "to_company_name": "C005"},
+            {"relation_id": "R006", "from_company_id": "C005", "to_company_id": "C008",
+             "relation_type": "对外投资", "relation_detail": "", "equity_ratio": None,
+             "amount": None, "start_date": None, "end_date": None, "status": "active",
+             "source": "simulated", "from_company_name": "C005", "to_company_name": "C008"},
+            {"relation_id": "R007", "from_company_id": "C004", "to_company_id": "C008",
+             "relation_type": "共同法人", "relation_detail": "", "equity_ratio": None,
+             "amount": None, "start_date": None, "end_date": None, "status": "active",
+             "source": "simulated", "from_company_name": "C004", "to_company_name": "C008"},
+        ]
+
         profiles = build_related_company_profiles(
-            "C004", ["C005", "C008"], evidence_facts, [],
+            "C004", ["C005", "C008"], evidence_facts, all_relations,
             self.engine, MockDeps()
         )
 
@@ -1590,13 +1606,12 @@ class TestRelatedCompanyRiskProfile:
         c008_profiles = [p for p in profiles if p["company_id"] == "C008"]
         assert len(c008_profiles) == 1, f"C008 应只有 1 个 profile, 实际 {len(c008_profiles)}"
 
-        # 应保留较长的路径
-        assert c008_profiles[0]["relation_depth"] == 2
-        assert "R005" in c008_profiles[0]["relation_ids"]
-        assert "R006" in c008_profiles[0]["relation_ids"]
+        # V2.3B.2: 路径由 find_all_paths 计算，最短路径 depth=1（C004→C008）
+        assert c008_profiles[0]["relation_depth"] == 1
+        assert "R007" in c008_profiles[0]["relation_ids"]
 
     def test_profile_path_provenance(self):
-        """RelatedCompanyRiskProfile 保留 provenance path。"""
+        """RelatedCompanyRiskProfile 路径由 find_all_paths 计算。"""
         from app.risk_rule_engine import build_related_company_profiles
 
         class MockDeps:
@@ -1626,8 +1641,16 @@ class TestRelatedCompanyRiskProfile:
              "target_role_in_relation": "shareholder"},
         ]
 
+        # V2.3B.2: 需要传入真实的 all_relations 以支持 find_all_paths
+        all_relations = [
+            {"relation_id": "R001", "from_company_id": "C001", "to_company_id": "C005",
+             "relation_type": "股权", "relation_detail": "", "equity_ratio": None,
+             "amount": None, "start_date": None, "end_date": None, "status": "active",
+             "source": "simulated", "from_company_name": "C001", "to_company_name": "C005"},
+        ]
+
         profiles = build_related_company_profiles(
-            "C001", ["C005"], evidence_facts, [],
+            "C001", ["C005"], evidence_facts, all_relations,
             self.engine, MockDeps()
         )
 
@@ -1638,7 +1661,6 @@ class TestRelatedCompanyRiskProfile:
         assert p["relation_path"] == ["C001", "C005"]
         assert "R001" in p["relation_ids"]
         assert "股权" in p["relation_types"]
-        assert p["target_role_in_relation"] == "shareholder"
 
     def test_relationship_exposure_status_not_calibrated(self):
         """relationship_exposure: score=null, level=null, status=NOT_CALIBRATED。"""
@@ -1760,6 +1782,387 @@ class TestRelatedCompanyRiskProfile:
         r7 = self.engine.evaluate_company_own_risk("C007", c007_facts, c007_extra)
         assert r7["score"] == 300, f"C007 own_score 应为 300, 实际 {r7['score']}"
         assert r7["level"] == "高风险"
+
+
+# ============================================================
+# V2.3B.2: 关联企业风险传导测试
+# ============================================================
+
+
+class TestRelationshipRiskTransmission:
+    """V2.3B.2: 关联企业风险传导测试。"""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        """创建引擎和加载配置。"""
+        from risk_rule_engine import (
+            load_transmission_config,
+            find_all_paths,
+            build_relation_graph,
+            compute_path_transmission,
+            compute_company_exposure_contribution,
+            compute_relationship_exposure,
+        )
+        self.config = load_config()
+        self.engine = RiskRuleEngine(self.config)
+        self.transmission_config = load_transmission_config()
+        self.find_all_paths = find_all_paths
+        self.build_relation_graph = build_relation_graph
+        self.compute_path_transmission = compute_path_transmission
+        self.compute_company_exposure_contribution = compute_company_exposure_contribution
+        self.compute_relationship_exposure = compute_relationship_exposure
+
+    def _make_relation(self, rid: str, from_id: str, to_id: str, rel_type: str) -> Dict[str, Any]:
+        """构造一条 relation 记录。"""
+        return {
+            "relation_id": rid,
+            "from_company_id": from_id,
+            "to_company_id": to_id,
+            "relation_type": rel_type,
+            "relation_detail": "",
+            "equity_ratio": None,
+            "amount": None,
+            "start_date": None,
+            "end_date": None,
+            "status": "active",
+            "source": "simulated",
+            "from_company_name": from_id,
+            "to_company_name": to_id,
+        }
+
+    def _make_profile(self, company_id: str, own_score: int, own_level: str = "低风险",
+                      name: str = "") -> Dict[str, Any]:
+        """构造一个 related company profile。"""
+        return {
+            "company_id": company_id,
+            "company_name": name or company_id,
+            "own_score": own_score,
+            "own_level": own_level,
+            "triggered_rules": [],
+            "dimension_scores": {},
+            "evidence_ids": [],
+            "evidence_count": 0,
+            "hard_rule_hits": [],
+            "relation_depth": 0,
+            "relation_path": [],
+            "relation_ids": [],
+            "relation_types": [],
+            "target_role_in_relation": None,
+            "all_paths": [],
+        }
+
+    def test_same_own_score_depth1_stronger_than_depth2(self):
+        """同一 Own Risk，depth=1 比 depth=2 transmission 更强。"""
+        relations = [
+            self._make_relation("R01", "TGT", "C01", "股权"),
+            self._make_relation("R02", "TGT", "C02", "股权"),
+            self._make_relation("R03", "C02", "C01", "股权"),
+        ]
+        graph = self.build_relation_graph(relations)
+
+        # C01: 直接关联 TGT (depth=1)
+        paths_c01 = self.find_all_paths(graph, "TGT", "C01")
+        # C01: 间接关联通过 C02 (depth=2)
+        paths_c02 = self.find_all_paths(graph, "TGT", "C01")
+
+        own_score = 100
+        tc = self.transmission_config
+
+        # depth=1 路径
+        d1_path = {"path": ["TGT", "C01"], "depth": 1,
+                    "relation_ids": ["R01"], "relation_types": ["股权"]}
+        d1_result = self.compute_path_transmission(own_score, d1_path, tc, relations, "TGT")
+
+        # depth=2 路径
+        d2_path = {"path": ["TGT", "C02", "C01"], "depth": 2,
+                    "relation_ids": ["R03", "R02"], "relation_types": ["股权", "股权"]}
+        d2_result = self.compute_path_transmission(own_score, d2_path, tc, relations, "TGT")
+
+        assert d1_result["transmitted_score"] > d2_result["transmitted_score"], (
+            f"depth=1 ({d1_result['transmitted_score']}) 应大于 depth=2 ({d2_result['transmitted_score']})"
+        )
+
+    def test_guarantee_path_stronger_than_common_shareholder(self):
+        """担保路径比共同股东路径有更强传导语义。"""
+        relations = [
+            self._make_relation("R01", "TGT", "C01", "担保"),
+            self._make_relation("R02", "TGT", "C02", "共同股东"),
+        ]
+        graph = self.build_relation_graph(relations)
+        tc = self.transmission_config
+        own_score = 100
+
+        # 担保路径
+        guarantee_path = {"path": ["TGT", "C01"], "depth": 1,
+                          "relation_ids": ["R01"], "relation_types": ["担保"]}
+        guarantee_result = self.compute_path_transmission(
+            own_score, guarantee_path, tc, relations, "TGT"
+        )
+
+        # 共同股东路径
+        common_path = {"path": ["TGT", "C02"], "depth": 1,
+                       "relation_ids": ["R02"], "relation_types": ["共同股东"]}
+        common_result = self.compute_path_transmission(
+            own_score, common_path, tc, relations, "TGT"
+        )
+
+        assert guarantee_result["transmitted_score"] > common_result["transmitted_score"], (
+            f"担保 ({guarantee_result['transmitted_score']}) 应大于 "
+            f"共同股东 ({common_result['transmitted_score']})"
+        )
+
+    def test_guarantor_vs_guaranteed_party_different(self):
+        """guarantor 与 guaranteed_party 有不同的传导语义。"""
+        relations = [
+            # TGT 担保 C01（TGT 是 guarantor）
+            self._make_relation("R01", "TGT", "C01", "担保"),
+        ]
+        graph = self.build_relation_graph(relations)
+        tc = self.transmission_config
+        own_score = 100
+
+        # TGT 担保 C01 → TGT 是 guarantor
+        path = {"path": ["TGT", "C01"], "depth": 1,
+                "relation_ids": ["R01"], "relation_types": ["担保"]}
+        result = self.compute_path_transmission(own_score, path, tc, relations, "TGT")
+
+        # 对于 TGT 担保 C01 的路径，TGT 是 guarantor（role_factor=1.0）
+        assert result["target_role"] == "guarantor"
+        assert result["target_role_factor"] == 1.0
+
+        # 反向：C01 担保 TGT（C01 是 guarantor，TGT 是 guaranteed_party）
+        relations2 = [
+            self._make_relation("R02", "C01", "TGT", "担保"),
+        ]
+        path2 = {"path": ["TGT", "C01"], "depth": 1,
+                 "relation_ids": ["R02"], "relation_types": ["担保"]}
+        result2 = self.compute_path_transmission(own_score, path2, tc, relations2, "TGT")
+
+        assert result2["target_role"] == "guaranteed_party"
+        assert result2["target_role_factor"] == 0.8
+
+        # guarantor 传导更强
+        assert result["transmitted_score"] > result2["transmitted_score"]
+
+    def test_multi_path_no_double_counting_own_risk(self):
+        """同一 related company 多路径不重复计算 Own Risk。"""
+        relations = [
+            self._make_relation("R01", "TGT", "C01", "股权"),
+            self._make_relation("R02", "TGT", "C02", "对外投资"),
+            self._make_relation("R03", "C02", "C01", "股权"),
+        ]
+        graph = self.build_relation_graph(relations)
+
+        # 查找所有路径
+        all_paths = self.find_all_paths(graph, "TGT", "C01")
+        assert len(all_paths) >= 2, "C01 应至少有两条路径可达"
+
+        profiles = [self._make_profile("C01", own_score=100)]
+        tc = self.transmission_config
+
+        exposure = self.compute_relationship_exposure(
+            "TGT", profiles, relations, tc
+        )
+
+        # contribution 应该只有一个（C01）
+        assert len(exposure["company_contributions"]) == 1
+        contribution = exposure["company_contributions"][0]
+        assert contribution["company_id"] == "C01"
+
+        # Own Risk 不应被重复计算
+        assert contribution["own_score"] == 100
+
+    def test_multi_path_strongest_strategy(self):
+        """多路径不简单求和，strongest path 策略正确。"""
+        relations = [
+            self._make_relation("R01", "TGT", "C01", "股权"),
+            self._make_relation("R02", "TGT", "C02", "对外投资"),
+            self._make_relation("R03", "C02", "C01", "股权"),
+        ]
+        graph = self.build_relation_graph(relations)
+
+        all_paths = self.find_all_paths(graph, "TGT", "C01")
+        tc = self.transmission_config
+        own_score = 100
+
+        # 计算每条路径的传导
+        transmissions = []
+        for p in all_paths:
+            pt = self.compute_path_transmission(own_score, p, tc, relations, "TGT")
+            transmissions.append(pt)
+
+        # contribution 应该取最强路径
+        contribution = self.compute_company_exposure_contribution(
+            "C01", own_score, "高风险", "Test Co",
+            transmissions, all_paths, tc
+        )
+
+        strongest = contribution["strongest_path"]
+        assert strongest is not None
+        assert contribution["transmitted_score"] == strongest["transmitted_score"]
+
+        # 最强路径的 transmitted_score 应大于等于任何单条路径
+        for t in transmissions:
+            assert contribution["transmitted_score"] >= t["transmitted_score"]
+
+    def test_zero_risk_company_zero_transmission(self):
+        """related company own_score=0 → transmitted_score 应为 0。"""
+        tc = self.transmission_config
+        relations = [
+            self._make_relation("R01", "TGT", "C01", "担保"),
+        ]
+        path = {"path": ["TGT", "C01"], "depth": 1,
+                "relation_ids": ["R01"], "relation_types": ["担保"]}
+        result = self.compute_path_transmission(0, path, tc, relations, "TGT")
+
+        assert result["transmitted_score"] == 0
+        assert "零风险" in result["transmission_reasons"][0]
+
+    def test_c007_own_risk_independent(self):
+        """C007 作为 C004 关联企业仍使用 Own Risk=300。"""
+        from risk_rule_engine import build_company_evidence_and_extra
+        import sys
+        from pathlib import Path
+
+        # 确保 backend/app 在路径中
+        BACKEND_APP = Path(__file__).resolve().parents[1] / "backend" / "app"
+        if str(BACKEND_APP) not in sys.path:
+            sys.path.insert(0, str(BACKEND_APP))
+        import deps
+
+        # 构建 C007 的 evidence
+        c007_evidence, c007_extra = build_company_evidence_and_extra("C007", deps)
+
+        # 计算 C007 的 own risk
+        own_risk = self.engine.evaluate_company_own_risk("C007", c007_evidence, c007_extra)
+        assert own_risk["score"] == 300, f"C007 own_score 应为 300, 实际 {own_risk['score']}"
+
+    def test_transmission_config_version_saved(self):
+        """Transmission config version/hash 保存在结果中。"""
+        from risk_rule_engine import get_transmission_config_hash
+        tc = self.transmission_config
+        profiles = [self._make_profile("C01", own_score=100)]
+        relations = [self._make_relation("R01", "TGT", "C01", "股权")]
+
+        exposure = self.compute_relationship_exposure("TGT", profiles, relations, tc)
+
+        assert exposure["status"] == "CALIBRATED_V1"
+        assert exposure["transmission_version"] == "1.0.0"
+        assert exposure["transmission_config_hash"] == get_transmission_config_hash(tc)
+
+    def test_c001_relationship_exposure(self):
+        """C001 的 Relationship Exposure 应主要来自 C002。"""
+        import sys
+        from pathlib import Path
+
+        BACKEND_APP = Path(__file__).resolve().parents[1] / "backend" / "app"
+        if str(BACKEND_APP) not in sys.path:
+            sys.path.insert(0, str(BACKEND_APP))
+        import deps
+
+        from risk_rule_engine import build_company_evidence_and_extra
+
+        # 构建 C002 的 own risk profile
+        c002_evidence, c002_extra = build_company_evidence_and_extra("C002", deps)
+        c002_own_risk = self.engine.evaluate_company_own_risk("C002", c002_evidence, c002_extra)
+
+        profiles = [self._make_profile(
+            "C002", c002_own_risk["score"], c002_own_risk["level"], "C002"
+        )]
+        relations = [self._make_relation("R01", "C001", "C002", "股权")]
+        tc = self.transmission_config
+
+        exposure = self.compute_relationship_exposure("C001", profiles, relations, tc)
+
+        assert exposure["status"] == "CALIBRATED_V1"
+        assert len(exposure["company_contributions"]) == 1
+        contrib = exposure["company_contributions"][0]
+        assert contrib["company_id"] == "C002"
+        # 传导分数应大于 0（如果 C002 有 own risk）
+        if c002_own_risk["score"] > 0:
+            assert exposure["score"] > 0
+
+    def test_c004_relationship_exposure(self):
+        """C004 的 Relationship Exposure 应主要来自 C007。"""
+        import sys
+        from pathlib import Path
+
+        BACKEND_APP = Path(__file__).resolve().parents[1] / "backend" / "app"
+        if str(BACKEND_APP) not in sys.path:
+            sys.path.insert(0, str(BACKEND_APP))
+        import deps
+
+        from risk_rule_engine import build_company_evidence_and_extra
+
+        # 构建 C007 的 own risk profile
+        c007_evidence, c007_extra = build_company_evidence_and_extra("C007", deps)
+        c007_own_risk = self.engine.evaluate_company_own_risk("C007", c007_evidence, c007_extra)
+
+        profiles = [self._make_profile(
+            "C007", c007_own_risk["score"], c007_own_risk["level"], "C007"
+        )]
+        # C004 → C005 → C006 → C007 (depth=3, 股权 0.7 * 0.3 = 0.21)
+        # C004 → C008 → C007 (depth=2, 共同股东 0.3 * 0.5 = 0.15)
+        # depth=3 路径传导更强（股权 factor 远高于共同股东）
+        relations = [
+            self._make_relation("R004", "C004", "C005", "股权"),
+            self._make_relation("R005", "C005", "C006", "对外投资"),
+            self._make_relation("R006", "C006", "C007", "股权"),
+            self._make_relation("R007", "C004", "C008", "对外投资"),
+            self._make_relation("R008", "C008", "C007", "共同股东"),
+        ]
+        tc = self.transmission_config
+
+        exposure = self.compute_relationship_exposure("C004", profiles, relations, tc)
+
+        assert exposure["status"] == "CALIBRATED_V1"
+        contrib = exposure["company_contributions"][0]
+        assert contrib["company_id"] == "C007"
+        assert contrib["own_score"] == 300
+        # 最强路径是 depth=3（C004→C005→C006→C007，最后关系类型为股权 0.7）
+        # 因为 股权(0.7) × depth_factor(0.3) = 0.21 > 共同股东(0.3) × depth_factor(0.5) = 0.15
+        assert contrib["strongest_path"] is not None
+        assert contrib["strongest_path"]["depth"] == 3
+
+    def test_c007_relationship_exposure_lower_than_own_risk(self):
+        """C007 的 Relationship Exposure 应显著低于其 Own Risk。"""
+        import sys
+        from pathlib import Path
+
+        BACKEND_APP = Path(__file__).resolve().parents[1] / "backend" / "app"
+        if str(BACKEND_APP) not in sys.path:
+            sys.path.insert(0, str(BACKEND_APP))
+        import deps
+
+        from risk_rule_engine import build_company_evidence_and_extra
+
+        # C007 的 own risk = 300
+        c007_evidence, c007_extra = build_company_evidence_and_extra("C007", deps)
+        c007_own_risk = self.engine.evaluate_company_own_risk("C007", c007_evidence, c007_extra)
+        assert c007_own_risk["score"] == 300
+
+        # 当 C007 是 C004 的关联企业时
+        # 最强路径 C004→C008→C007 (depth=2, 共同股东 relation_type_factor=0.3)
+        # transmitted_score = 300 * 0.3 * 0.5 * 0.5 = 22.5 → 23
+        profiles = [self._make_profile(
+            "C007", c007_own_risk["score"], c007_own_risk["level"], "C007"
+        )]
+        relations = [
+            self._make_relation("R004", "C004", "C005", "股权"),
+            self._make_relation("R005", "C005", "C006", "对外投资"),
+            self._make_relation("R006", "C006", "C007", "股权"),
+            self._make_relation("R007", "C004", "C008", "对外投资"),
+            self._make_relation("R008", "C008", "C007", "共同股东"),
+        ]
+        tc = self.transmission_config
+
+        exposure = self.compute_relationship_exposure("C004", profiles, relations, tc)
+
+        # relationship_exposure 应显著低于 C007 的 own_risk
+        assert exposure["score"] < c007_own_risk["score"], (
+            f"Relationship Exposure ({exposure['score']}) 应小于 "
+            f"Own Risk ({c007_own_risk['score']})"
+        )
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -375,6 +375,21 @@ class RiskScoring(BaseModel):
         default_factory=list, description="参与评分的 Evidence IDs（去重）"
     )
     total_evidence_count: int = Field(0, description="参与评分的 Evidence 总数")
+
+    # V2.2: 自身风险分离
+    own_risk: Optional[Dict[str, Any]] = Field(
+        None, description="自身风险评估（own_risk）"
+    )
+
+    # V2.3B.2: 关联风险传导
+    relationship_exposure: Optional[Dict[str, Any]] = Field(
+        None, description="关联风险传导（relationship_exposure）"
+    )
+
+    # V2.3B.2: 综合风险
+    comprehensive_risk: Optional[Dict[str, Any]] = Field(
+        None, description="综合风险评估（comprehensive_risk）"
+    )
 
 
 class AnalysisResponse(BaseModel):

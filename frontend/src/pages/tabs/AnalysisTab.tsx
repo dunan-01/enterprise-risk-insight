@@ -6,6 +6,7 @@ import MarkdownReport from '../../components/MarkdownReport'
 import { ErrorBlock } from '../../components/States'
 import { fmtDuration, fmtElapsed } from '../../lib/format'
 import { api } from '../../api/client'
+import type { CompanyExposureContribution, RelationshipExposure } from '../../api/types'
 
 /**
  * AI 风险洞察 Tab。
@@ -427,6 +428,67 @@ export default function AnalysisTab({
               </div>
             </div>
           </div>
+
+          {/* V2.3B.2: 关联风险传导摘要（如果存在） */}
+          {result.risk_scoring?.relationship_exposure?.status === 'CALIBRATED_V1' && (() => {
+            const re = result.risk_scoring!.relationship_exposure!
+            const contributions = re.company_contributions ?? []
+            const topContributions = contributions
+              .filter((c: CompanyExposureContribution) => c.transmitted_score > 0)
+              .sort((a: CompanyExposureContribution, b: CompanyExposureContribution) => b.transmitted_score - a.transmitted_score)
+              .slice(0, 5)
+
+            return (
+              <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+                <div className="card-head" style={{ background: 'var(--surface-alt)' }}>
+                  <h3>关联风险传导（Relationship Exposure）</h3>
+                  <span className="hint">
+                    传导分 <b>{re.score ?? '-'}</b> · 等级{' '}
+                    <RiskLevelBadge raw={re.level} /> · 传导版本 {re.transmission_version}
+                  </span>
+                </div>
+                <div style={{ padding: '16px 24px' }}>
+                  {topContributions.length > 0 ? (
+                    <div className="table-wrap">
+                      <table className="data-table" style={{ fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th>关联企业</th>
+                            <th>自身风险分</th>
+                            <th>传导分值</th>
+                            <th>最强路径</th>
+                            <th>深度</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topContributions.map((c: CompanyExposureContribution) => (
+                            <tr key={c.company_id}>
+                              <td>{c.company_name || c.company_id}（{c.company_id}）</td>
+                              <td className="num">{c.own_score}</td>
+                              <td className="num" style={{ fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                                {c.transmitted_score}
+                              </td>
+                              <td style={{ fontSize: 12 }}>
+                                {c.strongest_path?.path?.join(' → ') ?? '-'}
+                              </td>
+                              <td className="num">{c.strongest_path?.depth ?? '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: 'var(--text-3)' }}>
+                      无正传导贡献（所有关联企业自身风险分为 0）
+                    </div>
+                  )}
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-3)' }}>
+                    详细传导分析请切换到「关联关系」Tab 查看完整传导路径与系数。
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* 完整 AI 风险报告 */}
           <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>

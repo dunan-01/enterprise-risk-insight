@@ -467,7 +467,7 @@ def _find_task_id_for_company(company_id: str) -> Optional[str]:
 
 
 def _format_risk_scoring(result: Dict[str, Any], related_profiles: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """将 Rule Engine 结果格式化为 API 响应字段（V2.3B.1: 含 RelatedCompanyRiskProfile）。
+    """将 Rule Engine 结果格式化为 API 响应字段（V2.3B.2: 含 Relationship Exposure）。
 
     参数：
         result: RiskRuleEngine.evaluate() 的返回值。
@@ -506,13 +506,23 @@ def _format_risk_scoring(result: Dict[str, Any], related_profiles: Optional[List
     if "own_risk" in result:
         base["own_risk"] = result["own_risk"]
 
-    # V2.3B.1: relationship_exposure 改为 NOT_CALIBRATED + profiles
-    base["relationship_exposure"] = {
-        "status": "NOT_CALIBRATED",
-        "score": None,
-        "level": None,
-        "related_company_profiles": related_profiles or [],
-    }
+    # V2.3B.2: relationship_exposure
+    # 如果 result 中已有 CALIBRATED_V1 状态的 relationship_exposure，直接使用
+    re_from_result = result.get("relationship_exposure", {})
+    if re_from_result.get("status") == "CALIBRATED_V1":
+        base["relationship_exposure"] = re_from_result
+    else:
+        # V2.3B.1 兼容：NOT_CALIBRATED + profiles
+        base["relationship_exposure"] = {
+            "status": "NOT_CALIBRATED",
+            "score": None,
+            "level": None,
+            "level_status": "NOT_CALIBRATED",
+            "related_company_profiles": related_profiles or [],
+            "company_contributions": [],
+            "transmission_version": None,
+            "transmission_config_hash": None,
+        }
 
     if "comprehensive_risk" in result:
         base["comprehensive_risk"] = result["comprehensive_risk"]
@@ -781,23 +791,80 @@ def analyze_company(
                     "[RuleEngine] 关联企业 Profile 构建完成: %s profiles=%d",
                     cid, len(related_profiles),
                 )
+
+                # V2.3B.2: 计算 Relationship Exposure
+                try:
+                    from .risk_rule_engine import (
+                        compute_relationship_exposure,
+                        load_transmission_config,
+                    )
+                    transmission_config = load_transmission_config()
+                    relationship_exposure = compute_relationship_exposure(
+                        target_company_id=cid,
+                        related_company_profiles=related_profiles,
+                        all_relations=all_relations,
+                        transmission_config=transmission_config,
+                    )
+                    # 将计算结果注入 rule_engine_result
+                    rule_engine_result["relationship_exposure"] = relationship_exposure
+                    logger.info(
+                        "[RuleEngine] Relationship Exposure 计算完成: %s score=%s level=%s",
+                        cid,
+                        relationship_exposure.get("score"),
+                        relationship_exposure.get("level"),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[RuleEngine] Relationship Exposure 计算失败: %s", exc
+                    )
+
+                # V2.4.2: 计算 Comprehensive Risk（融合 own_risk + exposure）
+                try:
+                    from .comprehensive_risk_engine import compute_comprehensive_risk
+                    own_risk_for_fusion = rule_engine_result.get("own_risk", {})
+                    exposure_for_fusion = rule_engine_result.get("relationship_exposure", {})
+                    # 只有当两个输入都有有效 score 时才计算
+                    if (own_risk_for_fusion.get("score") is not None
+                            and exposure_for_fusion.get("score") is not None):
+                        comprehensive_result = compute_comprehensive_risk(
+                            own_risk=own_risk_for_fusion,
+                            relationship_exposure=exposure_for_fusion,
+                        )
+                        rule_engine_result["comprehensive_risk"] = comprehensive_result
+                        logger.info(
+                            "[RuleEngine] Comprehensive Risk 计算完成: %s case=%s score=%s level=%s",
+                            cid,
+                            comprehensive_result.get("case"),
+                            comprehensive_result.get("score"),
+                            comprehensive_result.get("level"),
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "[RuleEngine] Comprehensive Risk 计算失败: %s", exc
+                    )
+
             except Exception as exc:
                 logger.warning("[RuleEngine] 关联企业 Profile 构建失败: %s", exc)
 
     except Exception as exc:
         logger.warning("[RuleEngine] 风险评估异常（回退到 best-effort）: %s", exc)
 
-    # 3.6 确定性注入风险等级到报告正文（V2.1 新增）
-    # 风险等级和评分的唯一 Source of Truth 是 Rule Engine，
-    # 后端进行 deterministic post-processing，不依赖 LLM 正确回填。
-    engine_risk_level = rule_engine_result["risk_level"] if rule_engine_result else None
-    engine_risk_score = rule_engine_result["risk_score"] if rule_engine_result else 0
+    # 3.6 确定性注入风险等级到报告正文（V2.4.2: 使用 comprehensive_risk）
+    # comprehensive_risk.level 是唯一 Source of Truth。
+    comp_risk = (rule_engine_result or {}).get("comprehensive_risk", {})
+    engine_risk_level = comp_risk.get("level") or (rule_engine_result or {}).get("risk_level")
+    engine_risk_score = comp_risk.get("score") if comp_risk.get("score") is not None else (rule_engine_result or {}).get("risk_score", 0)
+    engine_case = comp_risk.get("case")
+    engine_explanation = comp_risk.get("explanation")
 
     if engine_risk_level and report:
-        report = inject_risk_level_into_report(report, engine_risk_level, engine_risk_score)
+        report = inject_risk_level_into_report(
+            report, engine_risk_level, engine_risk_score,
+            case=engine_case, explanation=engine_explanation,
+        )
         logger.info(
-            "[RuleEngine] 报告风险等级注入完成: %s level=%s score=%s",
-            cid, engine_risk_level, engine_risk_score,
+            "[RuleEngine] 报告风险等级注入完成: %s level=%s score=%s case=%s",
+            cid, engine_risk_level, engine_risk_score, engine_case,
         )
 
     response: Dict[str, Any] = {

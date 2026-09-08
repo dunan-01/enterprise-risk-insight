@@ -1,75 +1,54 @@
 # ============================================================
-# Risk Rule Engine 配置文件
+# Risk Rule Engine 配置文件（简化版）
 # 
-# 将"风险事实发现"（AI Agent）与"风险等级认定"（Rule Engine）解耦。
+# 规则驱动企业风险认定系统。
 # AI Agent 负责发现事实并绑定 Evidence ID；
 # 本配置驱动的 Rule Engine 负责确定性评分和等级认定。
 # ============================================================
 
-# ------------------------------------------------------------
-# 1. 风险等级定义（分数区间为闭区间）
-# ------------------------------------------------------------
+# 风险等级定义（分数区间为闭区间）
 risk_levels:
   - level: "低风险"
     min_score: 0
-    max_score: 25
+    max_score: 30
   - level: "中风险"
-    min_score: 26
-    max_score: 50
-  - level: "中高风险"
-    min_score: 51
-    max_score: 75
+    min_score: 31
+    max_score: 70
   - level: "高风险"
-    min_score: 76
-    max_score: 999
+    min_score: 71
+    max_score: 120
+  - level: "重大风险"
+    min_score: 121
+    max_score: 9999
 
-# ------------------------------------------------------------
-# 2. 维度权重（用于维度得分计算）
-#    dimension_score = (weight / total_weight) * risk_score
-#    所有权重之和不必为 1.0，引擎会自动归一化。
-# ------------------------------------------------------------
+# 维度权重（仅用于维度得分展示，不影响总分）
 dimension_weights:
-  business: 20          # 工商/经营维度
-  judicial: 30          # 司法维度（权重最高：最直接的风险信号）
-  relationship: 20      # 关联关系维度
-  public_opinion: 15    # 舆情维度
-  financial: 10         # 财务维度
-  recruitment: 5        # 招聘维度（弱信号）
+  judicial: 35
+  business: 25
+  financial: 20
+  relationship: 15
+  public_opinion: 10
+  recruitment: 5
 
-# ------------------------------------------------------------
-# 3. 风险规则库
-#
-# 每条规则包含：
-#   - id:            唯一规则ID
-#   - dimension:     所属维度（business/judicial/relationship/public_opinion/financial/recruitment）
-#   - name:          风险事项名称（人类可读）
-#   - condition:     匹配条件（Python 表达式，上下文为 evidence_data + extra）
-#   - score:         基础分值（正整数，越大越严重）
-#   - severity:      严重程度（critical/high/medium/low），仅作标注
-#   - evidence_types: 该规则可匹配的 Evidence 前缀（B/J/R/P/F/H）
-#   - description:   风险解释模板（用于报告输出）
-#
-# 注意：
-#   - 同一 Evidence 不得被同一规则重复计分（引擎去重）
-#   - condition 中可引用 evidence_data（dict）和 extra（dict）
-#   - extra 由引擎注入，包含 financial_indicators 等预计算指标
-# ------------------------------------------------------------
+# 风险规则库
+# 每条规则：事实 → 分数
+# 不考虑距离、路径、角色、传播系数
 rules:
   # ========== 司法维度 ==========
   - id: J001
     dimension: judicial
     name: 失信被执行人
     condition: "evidence_data.get('case_type') == '失信被执行人'"
-    score: 30
+    score: 40
     severity: critical
     evidence_types: ["J"]
     description: "企业被列为失信被执行人，存在严重信用违约风险。"
 
   - id: J002
     dimension: judicial
-    name: 被执行人（非失信）
+    name: 被执行人
     condition: "evidence_data.get('case_type') == '被执行人' and evidence_data.get('case_type') != '失信被执行人'"
-    score: 20
+    score: 25
     severity: high
     evidence_types: ["J"]
     description: "企业存在被执行记录，需关注执行情况。"
@@ -114,7 +93,7 @@ rules:
     dimension: judicial
     name: 破产案件
     condition: "evidence_data.get('case_type') == '破产案件'"
-    score: 35
+    score: 50
     severity: critical
     evidence_types: ["J"]
     description: "企业涉及破产程序，存在重大经营风险。"
@@ -124,7 +103,7 @@ rules:
     dimension: business
     name: 经营异常
     condition: "evidence_data.get('event_type') == '经营异常'"
-    score: 20
+    score: 30
     severity: high
     evidence_types: ["B"]
     description: "企业被列入经营异常名录，经营合规性存在风险。"
@@ -151,7 +130,7 @@ rules:
     dimension: business
     name: 吊销营业执照
     condition: "evidence_data.get('event_type') == '吊销'"
-    score: 35
+    score: 50
     severity: critical
     evidence_types: ["B"]
     description: "企业营业执照被吊销，丧失经营资格。"
@@ -175,21 +154,12 @@ rules:
     evidence_types: ["R"]
     description: "存在对外担保，需关注被担保方信用状况。"
 
-  - id: R003
-    dimension: relationship
-    name: "DEPRECATED: 关联企业存在高风险（V2.2 已废弃）"
-    condition: "False"
-    score: 0
-    severity: low
-    evidence_types: ["R"]
-    description: "此规则已废弃。V2.2 通过 Evidence Provenance 和 Relationship Risk Exposure 替代。"
-
   # ========== 舆情维度 ==========
   - id: P001
     dimension: public_opinion
     name: 已核实负面舆情
     condition: "evidence_data.get('sentiment') == 'negative' and evidence_data.get('verification_status') == 'verified'"
-    score: 15
+    score: 20
     severity: high
     evidence_types: ["P"]
     description: "已核实的负面舆情事件，对企业声誉和经营存在实质影响。"
@@ -217,7 +187,7 @@ rules:
     dimension: financial
     name: 资产负债率极高（>90%）
     condition: "extra.get('debt_ratio') is not None and extra.get('debt_ratio', 0) > 0.90"
-    score: 25
+    score: 30
     severity: critical
     evidence_types: ["F"]
     description: "资产负债率超过90%，濒临资不抵债。"
@@ -243,8 +213,6 @@ rules:
   - id: F005
     dimension: financial
     name: 审计意见异常
-    # V2.3A.1: 使用 canonical English values 判断，不再依赖中文字符串匹配
-    # unqualified = 正常（不触发）; qualified/adverse/disclaimer = 异常（触发）
     condition: "evidence_data.get('audit_opinion') is not None and evidence_data.get('audit_opinion') not in ('unqualified', '')"
     score: 20
     severity: high
@@ -280,24 +248,12 @@ rules:
     evidence_types: ["H"]
     description: "招聘规模极小（≤2条），可能处于经营收缩期。"
 
-# ------------------------------------------------------------
-# 4. 硬规则（强制提升风险等级）
-#
-# 硬规则在常规评分之后执行。
-# 如果 condition 为 True，则强制将风险等级提升到 force_level。
-# 用于处理极端情况（如：刑事犯罪、资不抵债等），
-# 确保这些情况不会被"平均分"稀释。
-#
-# 注意：
-#   - hard_rule 会覆盖 Rule Engine 根据分数计算的等级
-#   - 多条硬规则同时命中时，取最严重的等级
-#   - hard_rule 也会被记录到 triggered_rules 中，确保可追溯
-# ------------------------------------------------------------
+# 硬规则（强制提升风险等级）
 hard_rules:
   - id: HR001
     condition: "extra.get('has_bankruptcy_case', False)"
-    force_level: "高风险"
-    reason: "企业涉及破产案件，强制认定为高风险"
+    force_level: "重大风险"
+    reason: "企业涉及破产案件，强制认定为重大风险"
 
   - id: HR002
     condition: "extra.get('has_dishonest_execution', False)"

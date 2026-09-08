@@ -25,17 +25,7 @@ _RISK_SCORE_IN_SECTION_PATTERN = re.compile(
     re.MULTILINE,
 )
 
-# 匹配"风险模式："及其后的内容
-_RISK_CASE_IN_SECTION_PATTERN = re.compile(
-    r"(风险模式[：:]\s*)\n?([^\n]*)",
-    re.MULTILINE,
-)
 
-# 匹配"风险解释："及其后的内容
-_RISK_EXPLANATION_IN_SECTION_PATTERN = re.compile(
-    r"(风险解释[：:]\s*)\n?([^\n]*)",
-    re.MULTILINE,
-)
 
 # 匹配模板占位符
 _RISK_LEVEL_PLACEHOLDER_PATTERNS = [
@@ -51,8 +41,6 @@ def inject_risk_level_into_report(
     report: str,
     risk_level: str,
     risk_score: int,
-    case: Optional[str] = None,
-    explanation: Optional[str] = None,
 ) -> str:
     """确定性后处理：将 Rule Engine 的风险等级和评分注入报告正文。
 
@@ -67,8 +55,6 @@ def inject_risk_level_into_report(
         report: LLM 生成的原始报告文本。
         risk_level: Rule Engine 确定的风险等级。
         risk_score: Rule Engine 确定的风险评分。
-        case: V2.4.2 综合风险模式（A/B/C/D），可选。
-        explanation: V2.4.2 综合风险解释文本，可选。
 
     返回：
         注入后的报告文本。
@@ -137,47 +123,5 @@ def inject_risk_level_into_report(
             insert_pos = section_six_match.end()
             injection = f"\n综合风险等级：{risk_level}\n\n风险评分：{risk_score}\n\n"
             report = report[:insert_pos] + injection + report[insert_pos:]
-
-    # ============================================================
-    # 5. 注入风险模式（case）和风险解释（explanation）
-    # ============================================================
-    if case:
-        case_label_map = {
-            "A": "双重风险",
-            "B": "传染风险",
-            "C": "孤立风险",
-            "D": "低风险",
-        }
-        case_text = f"{case}（{case_label_map.get(case, '未知')}）"
-        if _RISK_CASE_IN_SECTION_PATTERN.search(report):
-            report = _RISK_CASE_IN_SECTION_PATTERN.sub(
-                lambda m: f"风险模式：{case_text}",
-                report,
-            )
-        elif "综合风险等级" in report:
-            # 在综合风险等级行之后插入
-            report = _RISK_LEVEL_IN_SECTION_PATTERN.sub(
-                lambda m: f"综合风险等级：{risk_level}\n\n风险模式：{case_text}",
-                report,
-                count=1,
-            )
-        else:
-            # 兜底：在文档末尾插入
-            report = report.rstrip() + f"\n\n风险模式：{case_text}\n"
-
-    if explanation:
-        if _RISK_EXPLANATION_IN_SECTION_PATTERN.search(report):
-            report = _RISK_EXPLANATION_IN_SECTION_PATTERN.sub(
-                lambda m: f"风险解释：{explanation}",
-                report,
-            )
-        elif "综合风险等级" in report:
-            report = _RISK_LEVEL_IN_SECTION_PATTERN.sub(
-                lambda m: f"综合风险等级：{risk_level}\n\n风险解释：{explanation}",
-                report,
-                count=1,
-            )
-        else:
-            report = report.rstrip() + f"\n\n风险解释：{explanation}\n"
 
     return report
